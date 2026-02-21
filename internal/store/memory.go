@@ -80,7 +80,16 @@ func (s *MemoryStore) CreateIncident(incident app.Incident) (app.Incident, error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	incident.ID = s.nextID("inc")
-	incident.CreatedAt = time.Now().UTC()
+	if incident.CreatedAt.IsZero() {
+		incident.CreatedAt = time.Now().UTC()
+	}
+	if incident.Service == "" {
+		incident.Service = "unknown"
+	}
+	if incident.Status == "resolved" && incident.ResolvedAt == nil {
+		resolvedAt := time.Now().UTC()
+		incident.ResolvedAt = &resolvedAt
+	}
 	s.incidents = append(s.incidents, incident)
 	return incident, nil
 }

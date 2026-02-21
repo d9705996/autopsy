@@ -4,6 +4,8 @@ import (
 	"embed"
 	"encoding/json"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,9 +67,22 @@ func (s *Server) handlePublicStatusPage(writer http.ResponseWriter, request *htt
 		return
 	}
 
+	now := time.Now().UTC()
+	periodHours := 24
+	if raw := request.URL.Query().Get("periodHours"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr == nil && parsed > 0 && parsed <= 24*30 {
+			periodHours = parsed
+		}
+	}
+	periodStart := now.Add(-time.Duration(periodHours) * time.Hour)
+
 	status := app.PublicStatusPage{
 		OverallStatus: "operational",
-		UpdatedAt:     time.Now().UTC(),
+		UpdatedAt:     now,
+		PeriodStart:   periodStart,
+		PeriodEnd:     now,
+		Services:      buildServiceAvailability(incidents, periodStart, now),
 		Incidents:     make([]app.StatusPageIncident, 0, len(incidents)),
 	}
 
@@ -77,6 +92,7 @@ func (s *Server) handlePublicStatusPage(writer http.ResponseWriter, request *htt
 		}
 		status.Incidents = append(status.Incidents, app.StatusPageIncident{
 			ID:             incident.ID,
+			Service:        incident.Service,
 			Title:          incident.Title,
 			Severity:       incident.Severity,
 			Status:         incident.Status,
@@ -325,8 +341,14 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
+	service := "unknown"
+	if alert.Labels != nil && alert.Labels["service"] != "" {
+		service = alert.Labels["service"]
+	}
+
 	incident, err := s.store.CreateIncident(app.Incident{
 		AlertID:       alert.ID,
+		Service:       service,
 		Title:         "Auto-created incident for triaged alert: " + alert.Title,
 		Severity:      alert.Severity,
 		Status:        "investigating",
@@ -499,6 +521,74 @@ func (s *Server) handleToolByID(writer http.ResponseWriter, request *http.Reques
 	default:
 		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func buildServiceAvailability(incidents []app.Incident, periodStart, periodEnd time.Time) []app.ServiceAvailability {
+	serviceDowntime := map[string]time.Duration{}
+	periodDuration := periodEnd.Sub(periodStart)
+	if periodDuration <= 0 {
+		return []app.ServiceAvailability{}
+	}
+
+	for _, incident := range incidents {
+		service := incident.Service
+		if service == "" {
+			service = "unknown"
+		}
+		if _, ok := serviceDowntime[service]; !ok {
+			serviceDowntime[service] = 0
+		}
+
+		incidentEnd := periodEnd
+		if incident.ResolvedAt != nil {
+			incidentEnd = *incident.ResolvedAt
+		}
+		if incidentEnd.Before(periodStart) || incident.CreatedAt.After(periodEnd) {
+			continue
+		}
+		if incident.CreatedAt.After(incidentEnd) {
+			continue
+		}
+
+		start := incident.CreatedAt
+		if start.Before(periodStart) {
+			start = periodStart
+		}
+		end := incidentEnd
+		if end.After(periodEnd) {
+			end = periodEnd
+		}
+		if end.After(start) {
+			serviceDowntime[service] += end.Sub(start)
+		}
+	}
+
+	serviceNames := make([]string, 0, len(serviceDowntime))
+	for service := range serviceDowntime {
+		serviceNames = append(serviceNames, service)
+	}
+	sort.Strings(serviceNames)
+
+	services := make([]app.ServiceAvailability, 0, len(serviceDowntime))
+	for _, service := range serviceNames {
+		downtime := serviceDowntime[service]
+		if downtime < 0 {
+			downtime = 0
+		}
+		availability := 100 - (float64(downtime)/float64(periodDuration))*100
+		if availability < 0 {
+			availability = 0
+		}
+		services = append(services, app.ServiceAvailability{
+			Service:             service,
+			AvailabilityPercent: availability,
+			DowntimeMinutes:     int(downtime / time.Minute),
+			PeriodStart:         periodStart,
+			PeriodEnd:           periodEnd,
+		})
+	}
+
+	return services
 }
 
 func writeJSON(writer http.ResponseWriter, status int, data any) {

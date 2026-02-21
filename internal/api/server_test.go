@@ -285,4 +285,63 @@ func TestPublicStatusPageReflectsActiveIncident(t *testing.T) {
 	if !ok || len(incidents) != 1 {
 		t.Fatalf("expected 1 public incident got %#v", status["incidents"])
 	}
+	services, ok := status["services"].([]any)
+	if !ok || len(services) != 1 {
+		t.Fatalf("expected 1 service availability entry got %#v", status["services"])
+	}
+	service, ok := services[0].(map[string]any)
+	if !ok || service["service"] != "unknown" {
+		t.Fatalf("expected unknown service got %#v", services[0])
+	}
+}
+
+func TestPublicStatusPageReturnsServiceAvailabilityForPeriod(t *testing.T) {
+	repo := store.NewMemoryStore()
+	now := time.Now().UTC()
+	start := now.Add(-2 * time.Hour)
+	resolved := now.Add(-1 * time.Hour)
+	if _, err := repo.CreateIncident(app.Incident{
+		AlertID:       "alt-1",
+		Service:       "payments",
+		Title:         "payments latency",
+		Severity:      app.SeverityCritical,
+		Status:        "resolved",
+		StatusPageURL: "/status/alt-1",
+		CreatedAt:     start,
+		ResolvedAt:    &resolved,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(repo, triage.NewHeuristicAgent(), auth.New("test-secret"), testFS)
+	ts := httptest.NewServer(server.Router())
+	defer ts.Close()
+
+	res, err := http.Get(ts.URL + "/api/statuspage?periodHours=3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+
+	var status map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	services, ok := status["services"].([]any)
+	if !ok || len(services) != 1 {
+		t.Fatalf("expected 1 service availability entry got %#v", status["services"])
+	}
+	service := services[0].(map[string]any)
+	if service["service"] != "payments" {
+		t.Fatalf("expected payments service got %#v", service["service"])
+	}
+	availability, ok := service["availabilityPercent"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric availability got %#v", service["availabilityPercent"])
+	}
+	if availability <= 60 || availability >= 70 {
+		t.Fatalf("expected availability near 66.6 got %f", availability)
+	}
 }

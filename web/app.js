@@ -120,6 +120,17 @@ async function loadPublicStatusPage() {
   const data = await request('/api/statuspage');
   document.getElementById('overall-status').textContent = data.overallStatus.replaceAll('_', ' ');
   document.getElementById('status-updated').textContent = new Date(data.updatedAt).toLocaleString();
+  const servicesHost = document.getElementById('service-availability');
+  servicesHost.innerHTML = data.services.map((svc) => `
+    <article class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div class="flex items-center justify-between gap-3">
+        <h3 class="text-base font-semibold">${svc.service}</h3>
+        <span class="text-sm text-cyan-300">${svc.availabilityPercent.toFixed(2)}%</span>
+      </div>
+      <p class="mt-2 text-xs text-slate-500">Downtime: ${svc.downtimeMinutes} minutes · Period: ${new Date(svc.periodStart).toLocaleString()} - ${new Date(svc.periodEnd).toLocaleString()}</p>
+    </article>
+  `).join('') || '<p class="text-slate-400">No service-impacting incidents in this period.</p>';
+
   const host = document.getElementById('public-incidents');
   host.innerHTML = data.incidents.map((inc) => `
     <article class="rounded-xl border border-slate-800 bg-slate-900 p-4">
@@ -128,7 +139,7 @@ async function loadPublicStatusPage() {
         <span class="rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-300">${inc.status}</span>
       </div>
       <p class="mt-2 text-sm text-slate-300">${inc.currentMessage}</p>
-      <p class="mt-2 text-xs text-slate-500">Declared: ${new Date(inc.declaredAt).toLocaleString()} · Severity: ${inc.severity}</p>
+      <p class="mt-2 text-xs text-slate-500">Service: ${inc.service} · Declared: ${new Date(inc.declaredAt).toLocaleString()} · Severity: ${inc.severity}</p>
       <a class="mt-2 inline-block text-sm text-cyan-300 underline" href="${inc.statusPageUrl}">Status page link</a>
       <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">${(inc.responsePlaybook || []).map((step) => `<li>${step}</li>`).join('')}</ul>
     </article>

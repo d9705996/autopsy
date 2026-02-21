@@ -42,17 +42,20 @@ type TriageReport struct {
 }
 
 type Incident struct {
-	ID            string    `json:"id"`
-	AlertID       string    `json:"alertId"`
-	Title         string    `json:"title"`
-	Severity      Severity  `json:"severity"`
-	Status        string    `json:"status"`
-	StatusPageURL string    `json:"statusPageUrl"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID            string     `json:"id"`
+	AlertID       string     `json:"alertId"`
+	Service       string     `json:"service"`
+	Title         string     `json:"title"`
+	Severity      Severity   `json:"severity"`
+	Status        string     `json:"status"`
+	StatusPageURL string     `json:"statusPageUrl"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	ResolvedAt    *time.Time `json:"resolvedAt,omitempty"`
 }
 
 type StatusPageIncident struct {
 	ID               string    `json:"id"`
+	Service          string    `json:"service"`
 	Title            string    `json:"title"`
 	Severity         Severity  `json:"severity"`
 	Status           string    `json:"status"`
@@ -62,10 +65,21 @@ type StatusPageIncident struct {
 	ResponsePlaybook []string  `json:"responsePlaybook"`
 }
 
+type ServiceAvailability struct {
+	Service             string    `json:"service"`
+	AvailabilityPercent float64   `json:"availabilityPercent"`
+	DowntimeMinutes     int       `json:"downtimeMinutes"`
+	PeriodStart         time.Time `json:"periodStart"`
+	PeriodEnd           time.Time `json:"periodEnd"`
+}
+
 type PublicStatusPage struct {
-	OverallStatus string               `json:"overallStatus"`
-	UpdatedAt     time.Time            `json:"updatedAt"`
-	Incidents     []StatusPageIncident `json:"incidents"`
+	OverallStatus string                `json:"overallStatus"`
+	UpdatedAt     time.Time             `json:"updatedAt"`
+	PeriodStart   time.Time             `json:"periodStart"`
+	PeriodEnd     time.Time             `json:"periodEnd"`
+	Services      []ServiceAvailability `json:"services"`
+	Incidents     []StatusPageIncident  `json:"incidents"`
 }
 
 type PostMortem struct {

@@ -75,11 +75,13 @@ func (s *SQLStore) migrate() error {
 		`CREATE TABLE IF NOT EXISTS incidents (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			alert_id TEXT NOT NULL,
+			service TEXT NOT NULL DEFAULT 'unknown',
 			title TEXT NOT NULL,
 			severity TEXT NOT NULL,
 			status TEXT NOT NULL,
 			status_page_url TEXT NOT NULL,
-			created_at TIMESTAMP NOT NULL
+			created_at TIMESTAMP NOT NULL,
+			resolved_at TIMESTAMP
 		);`,
 		`CREATE TABLE IF NOT EXISTS postmortems (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,7 +153,7 @@ func (s *SQLStore) migrate() error {
 		// Keep compatibility with existing migration path by executing postgres specific DDL below.
 		stmts = []string{
 			`CREATE TABLE IF NOT EXISTS alerts (id BIGSERIAL PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,labels TEXT,payload TEXT,triage TEXT,created_at TIMESTAMP NOT NULL);`,
-			`CREATE TABLE IF NOT EXISTS incidents (id BIGSERIAL PRIMARY KEY,alert_id TEXT NOT NULL,title TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,status_page_url TEXT NOT NULL,created_at TIMESTAMP NOT NULL);`,
+			`CREATE TABLE IF NOT EXISTS incidents (id BIGSERIAL PRIMARY KEY,alert_id TEXT NOT NULL,service TEXT NOT NULL DEFAULT 'unknown',title TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,status_page_url TEXT NOT NULL,created_at TIMESTAMP NOT NULL,resolved_at TIMESTAMP);`,
 			`CREATE TABLE IF NOT EXISTS postmortems (id BIGSERIAL PRIMARY KEY,incident_id TEXT NOT NULL,summary TEXT NOT NULL,timeline TEXT,learnings TEXT,actions TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS playbooks (id BIGSERIAL PRIMARY KEY,service TEXT NOT NULL,title TEXT NOT NULL,steps TEXT,last_updated TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS oncall_shifts (id BIGSERIAL PRIMARY KEY,engineer TEXT NOT NULL,primary_for TEXT NOT NULL,start_at TIMESTAMP NOT NULL,end_at TIMESTAMP NOT NULL,escalation TEXT);`,
@@ -171,6 +173,12 @@ func (s *SQLStore) migrate() error {
 	if err := s.ensureAlertsStatusColumn(); err != nil {
 		return err
 	}
+	if err := s.ensureIncidentsServiceColumn(); err != nil {
+		return err
+	}
+	if err := s.ensureIncidentsResolvedAtColumn(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -180,6 +188,30 @@ func (s *SQLStore) ensureAlertsStatusColumn() error {
 		return err
 	}
 	_, err := s.db.Exec(`ALTER TABLE alerts ADD COLUMN status TEXT NOT NULL DEFAULT 'received'`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLStore) ensureIncidentsServiceColumn() error {
+	if s.dialect == postgresDialect {
+		_, err := s.db.Exec(`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS service TEXT NOT NULL DEFAULT 'unknown'`)
+		return err
+	}
+	_, err := s.db.Exec(`ALTER TABLE incidents ADD COLUMN service TEXT NOT NULL DEFAULT 'unknown'`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLStore) ensureIncidentsResolvedAtColumn() error {
+	if s.dialect == postgresDialect {
+		_, err := s.db.Exec(`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP`)
+		return err
+	}
+	_, err := s.db.Exec(`ALTER TABLE incidents ADD COLUMN resolved_at TIMESTAMP`)
 	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return err
 	}
@@ -533,10 +565,19 @@ func (s *SQLStore) Alerts() ([]app.Alert, error) {
 }
 
 func (s *SQLStore) CreateIncident(in app.Incident) (app.Incident, error) {
-	in.CreatedAt = s.nowClock()
-	q := `INSERT INTO incidents (alert_id,title,severity,status,status_page_url,created_at) VALUES (%s,%s,%s,%s,%s,%s)`
-	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6))
-	id, err := s.insertWithID(q, in.AlertID, in.Title, string(in.Severity), in.Status, in.StatusPageURL, in.CreatedAt)
+	if in.CreatedAt.IsZero() {
+		in.CreatedAt = s.nowClock()
+	}
+	if in.Service == "" {
+		in.Service = "unknown"
+	}
+	if in.Status == "resolved" && in.ResolvedAt == nil {
+		resolvedAt := s.nowClock()
+		in.ResolvedAt = &resolvedAt
+	}
+	q := `INSERT INTO incidents (alert_id,service,title,severity,status,status_page_url,created_at,resolved_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7), s.placeholder(8))
+	id, err := s.insertWithID(q, in.AlertID, in.Service, in.Title, string(in.Severity), in.Status, in.StatusPageURL, in.CreatedAt, in.ResolvedAt)
 	if err != nil {
 		return app.Incident{}, err
 	}
@@ -545,7 +586,7 @@ func (s *SQLStore) CreateIncident(in app.Incident) (app.Incident, error) {
 }
 
 func (s *SQLStore) Incidents() ([]app.Incident, error) {
-	rows, err := s.db.Query(`SELECT id,alert_id,title,severity,status,status_page_url,created_at FROM incidents ORDER BY id DESC`)
+	rows, err := s.db.Query(`SELECT id,alert_id,service,title,severity,status,status_page_url,created_at,resolved_at FROM incidents ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +596,7 @@ func (s *SQLStore) Incidents() ([]app.Incident, error) {
 		var id int64
 		var sev string
 		var in app.Incident
-		if err := rows.Scan(&id, &in.AlertID, &in.Title, &sev, &in.Status, &in.StatusPageURL, &in.CreatedAt); err != nil {
+		if err := rows.Scan(&id, &in.AlertID, &in.Service, &in.Title, &sev, &in.Status, &in.StatusPageURL, &in.CreatedAt, &in.ResolvedAt); err != nil {
 			return nil, err
 		}
 		in.ID = fmt.Sprintf("inc-%06d", id)
