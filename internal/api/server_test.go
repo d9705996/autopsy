@@ -17,6 +17,16 @@ import (
 //go:embed testdata/*
 var testFS embed.FS
 
+func setupServer(t *testing.T) *Server {
+	t.Helper()
+	repo, err := store.NewSQLStore("sqlite", "file::memory:?cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	return NewServer(repo, triage.NewHeuristicAgent(), auth.New("admin", "admin"), testFS)
+}
+
 func newClient(ts *httptest.Server) *http.Client {
 	jar, _ := cookiejar.New(nil)
 	c := ts.Client()
@@ -38,8 +48,7 @@ func login(t *testing.T, c *http.Client, url string) {
 }
 
 func TestCriticalAlertCreatesIncident(t *testing.T) {
-	srv := NewServer(store.NewMemoryStore(), triage.NewHeuristicAgent(), auth.New("admin", "admin"), testFS)
-	ts := httptest.NewServer(srv.Router())
+	ts := httptest.NewServer(setupServer(t).Router())
 	defer ts.Close()
 	c := newClient(ts)
 	login(t, c, ts.URL)
@@ -70,8 +79,7 @@ func TestCriticalAlertCreatesIncident(t *testing.T) {
 }
 
 func TestUnauthorizedWithoutLogin(t *testing.T) {
-	srv := NewServer(store.NewMemoryStore(), triage.NewHeuristicAgent(), auth.New("admin", "admin"), testFS)
-	ts := httptest.NewServer(srv.Router())
+	ts := httptest.NewServer(setupServer(t).Router())
 	defer ts.Close()
 
 	res, err := ts.Client().Get(ts.URL + "/api/alerts")

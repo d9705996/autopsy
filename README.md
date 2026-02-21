@@ -13,6 +13,9 @@ Autopsy is a Go-based incident response management platform inspired by Grafana 
   - learning-focused follow-up records
 - On-call scheduling with escalation paths.
 - Session-based login for authenticated API usage.
+- Persistent storage with configurable database backend:
+  - SQLite for local development
+  - PostgreSQL for multi-instance/runtime deployments
 
 ## Run locally
 
@@ -21,6 +24,18 @@ go run .
 ```
 
 Default credentials: `admin/admin` (override with `AUTOPSY_ADMIN_USER` and `AUTOPSY_ADMIN_PASSWORD`).
+
+Database defaults:
+- `AUTOPSY_DB_DRIVER=sqlite`
+- `AUTOPSY_DB_DSN=file:autopsy.db?_pragma=busy_timeout(5000)`
+
+Use PostgreSQL:
+
+```bash
+AUTOPSY_DB_DRIVER=postgres \
+AUTOPSY_DB_DSN='postgres://postgres:postgres@localhost:5432/autopsy?sslmode=disable' \
+go run .
+```
 
 Open: <http://localhost:8080>
 

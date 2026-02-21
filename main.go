@@ -20,8 +20,20 @@ func main() {
 	adminUser := envOrDefault("AUTOPSY_ADMIN_USER", "admin")
 	adminPassword := envOrDefault("AUTOPSY_ADMIN_PASSWORD", "admin")
 
-	server := api.NewServer(store.NewMemoryStore(), triage.NewHeuristicAgent(), auth.New(adminUser, adminPassword), webFS)
-	log.Printf("autopsy listening on %s", addr)
+	dbDriver := envOrDefault("AUTOPSY_DB_DRIVER", "sqlite")
+	dbDSN := envOrDefault("AUTOPSY_DB_DSN", "file:autopsy.db?_pragma=busy_timeout(5000)")
+	if dbDriver == "postgres" && dbDSN == "file:autopsy.db?_pragma=busy_timeout(5000)" {
+		dbDSN = envOrDefault("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/autopsy?sslmode=disable")
+	}
+
+	repo, err := store.NewSQLStore(dbDriver, dbDSN)
+	if err != nil {
+		log.Fatalf("failed to initialize database: %v", err)
+	}
+	defer repo.Close()
+
+	server := api.NewServer(repo, triage.NewHeuristicAgent(), auth.New(adminUser, adminPassword), webFS)
+	log.Printf("autopsy listening on %s using %s", addr, dbDriver)
 	if err := http.ListenAndServe(addr, server.Router()); err != nil {
 		log.Fatal(err)
 	}

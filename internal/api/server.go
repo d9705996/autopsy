@@ -13,13 +13,13 @@ import (
 )
 
 type Server struct {
-	store *store.MemoryStore
+	store store.Repository
 	agent triage.Agent
 	auth  *auth.Auth
 	uiFS  embed.FS
 }
 
-func NewServer(st *store.MemoryStore, agent triage.Agent, a *auth.Auth, ui embed.FS) *Server {
+func NewServer(st store.Repository, agent triage.Agent, a *auth.Auth, ui embed.FS) *Server {
 	return &Server{store: st, agent: agent, auth: a, uiFS: ui}
 }
 
@@ -86,7 +86,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.Alerts())
+		alerts, err := s.store.Alerts()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, alerts)
 	case http.MethodPost:
 		var req app.Alert
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -96,19 +101,30 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		if req.Source == "" {
 			req.Source = "grafana"
 		}
-		alert := s.store.SaveAlert(req)
+		alert, err := s.store.SaveAlert(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		triageReport := s.agent.Review(alert)
-		s.store.UpdateAlertTriage(alert.ID, triageReport)
+		if err := s.store.UpdateAlertTriage(alert.ID, triageReport); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		alert.Triage = &triageReport
 
 		if alert.Severity == app.SeverityCritical {
-			incident := s.store.CreateIncident(app.Incident{
+			incident, err := s.store.CreateIncident(app.Incident{
 				AlertID:       alert.ID,
 				Title:         "Auto-created incident for critical alert: " + alert.Title,
 				Severity:      alert.Severity,
 				Status:        "investigating",
 				StatusPageURL: "/status/" + alert.ID,
 			})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			writeJSON(w, http.StatusCreated, map[string]any{"alert": alert, "incident": incident})
 			return
 		}
@@ -120,7 +136,12 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, s.store.Incidents())
+		incidents, err := s.store.Incidents()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, incidents)
 		return
 	}
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -129,14 +150,24 @@ func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePostMortems(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.PostMortems())
+		pms, err := s.store.PostMortems()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, pms)
 	case http.MethodPost:
 		var pm app.PostMortem
 		if err := json.NewDecoder(r.Body).Decode(&pm); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, s.store.AddPostMortem(pm))
+		created, err := s.store.AddPostMortem(pm)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, created)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -145,14 +176,24 @@ func (s *Server) handlePostMortems(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePlaybooks(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.Playbooks())
+		playbooks, err := s.store.Playbooks()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, playbooks)
 	case http.MethodPost:
 		var pb app.Playbook
 		if err := json.NewDecoder(r.Body).Decode(&pb); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, s.store.AddPlaybook(pb))
+		created, err := s.store.AddPlaybook(pb)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, created)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -161,14 +202,24 @@ func (s *Server) handlePlaybooks(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOnCall(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.OnCall())
+		shifts, err := s.store.OnCall()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, shifts)
 	case http.MethodPost:
 		var shift app.OnCallShift
 		if err := json.NewDecoder(r.Body).Decode(&shift); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, s.store.AddShift(shift))
+		created, err := s.store.AddShift(shift)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, created)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
