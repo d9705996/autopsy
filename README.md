@@ -51,5 +51,6 @@ Open: <http://localhost:8080>
 ## CI/CD
 
 GitHub Actions is split into dedicated workflows:
-- `lint-and-test`: runs formatting checks, tests, and `golangci-lint`.
+- `lint`: runs formatting checks and `golangci-lint`.
+- `test`: runs Go unit/integration tests with coverage.
 - `docker-release`: builds and pushes a GHCR image only when a git tag like `v1.2.3` is created; the Docker image tag matches `github.ref_name`.
