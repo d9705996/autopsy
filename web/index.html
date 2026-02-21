@@ -9,18 +9,58 @@
   <body>
     <main>
       <h1>Autopsy IRM</h1>
-      <section id="login">
+
+      <section id="login" class="card">
         <h2>Login</h2>
-        <input id="u" placeholder="username" value="admin"/>
-        <input id="p" placeholder="password" type="password" value="admin"/>
+        <p>Local auth for now. SSO can be enabled later.</p>
+        <input id="u" placeholder="username" value="admin" />
+        <input id="p" placeholder="password" type="password" />
         <button onclick="login()">Login</button>
       </section>
 
       <section id="dashboard" class="hidden">
-        <h2>Dashboard</h2>
-        <button onclick="loadData()">Refresh</button>
-        <button onclick="seedCriticalAlert()">Create Critical Alert</button>
-        <pre id="out"></pre>
+        <div class="row">
+          <h2>Dashboard</h2>
+          <button onclick="logout()">Logout</button>
+        </div>
+        <p id="whoami"></p>
+
+        <div id="admin-panel" class="card hidden">
+          <h3>Admin Panel</h3>
+          <div class="grid">
+            <div>
+              <h4>Users</h4>
+              <input id="new-username" placeholder="username" />
+              <input id="new-display" placeholder="display name" />
+              <input id="new-password" type="password" placeholder="temporary password" />
+              <input id="new-roles" placeholder="roles (comma separated)" value="viewer" />
+              <button onclick="createUser()">Create User</button>
+              <pre id="users-out"></pre>
+            </div>
+            <div>
+              <h4>Roles</h4>
+              <input id="role-name" placeholder="role name" />
+              <input id="role-desc" placeholder="description" />
+              <input id="role-perms" placeholder="permissions (comma separated)" />
+              <button onclick="createRole()">Create Role</button>
+              <pre id="roles-out"></pre>
+            </div>
+            <div>
+              <h4>Invites</h4>
+              <input id="invite-email" placeholder="email" />
+              <input id="invite-role" placeholder="role" value="viewer" />
+              <button onclick="createInvite()">Create Invite</button>
+              <pre id="invites-out"></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Operations</h3>
+          <button onclick="loadData()">Refresh</button>
+          <button onclick="seedCriticalAlert()">Create Critical Alert</button>
+          <pre id="out"></pre>
+        </div>
       </section>
     </main>
     <script src="/app.js"></script>

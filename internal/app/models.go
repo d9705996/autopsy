@@ -68,7 +68,30 @@ type OnCallShift struct {
 }
 
 type User struct {
-	Username string
-	Password string
-	Role     string
+	ID           int64     `json:"id"`
+	Username     string    `json:"username"`
+	DisplayName  string    `json:"displayName"`
+	PasswordHash string    `json:"-"`
+	Roles        []string  `json:"roles"`
+	Enabled      bool      `json:"enabled"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type Role struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Permissions []string  `json:"permissions"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type Invite struct {
+	ID         int64      `json:"id"`
+	Email      string     `json:"email"`
+	Role       string     `json:"role"`
+	Token      string     `json:"token"`
+	Status     string     `json:"status"`
+	ExpiresAt  time.Time  `json:"expiresAt"`
+	AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
 }

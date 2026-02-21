@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/example/autopsy/internal/api"
+	"github.com/example/autopsy/internal/app"
 	"github.com/example/autopsy/internal/auth"
 	"github.com/example/autopsy/internal/store"
 	"github.com/example/autopsy/internal/triage"
@@ -22,6 +23,7 @@ func main() {
 	addr := envOrDefault("AUTOPSY_ADDR", ":8080")
 	adminUser := envOrDefault("AUTOPSY_ADMIN_USER", "admin")
 	adminPassword := envOrDefault("AUTOPSY_ADMIN_PASSWORD", "admin")
+	authSecret := envOrDefault("AUTOPSY_AUTH_SECRET", "autopsy-dev-secret")
 
 	dbDriver := envOrDefault("AUTOPSY_DB_DRIVER", "sqlite")
 	dbDSN := envOrDefault("AUTOPSY_DB_DSN", "file:autopsy.db?_pragma=busy_timeout(5000)")
@@ -35,7 +37,16 @@ func main() {
 	}
 	defer repo.Close()
 
-	server := api.NewServer(repo, triage.NewHeuristicAgent(), auth.New(adminUser, adminPassword), webFS)
+	_ = repo.EnsureRole(app.Role{
+		Name:        "viewer",
+		Description: "Read-only dashboard access",
+		Permissions: []string{"read:dashboard"},
+	})
+	if err = repo.EnsureAdminUser(adminUser, adminPassword); err != nil {
+		log.Fatalf("failed to create admin user: %v", err)
+	}
+
+	server := api.NewServer(repo, triage.NewHeuristicAgent(), auth.New(authSecret), webFS)
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           server.Router(),

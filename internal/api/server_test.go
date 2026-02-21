@@ -8,7 +8,9 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/example/autopsy/internal/app"
 	"github.com/example/autopsy/internal/auth"
 	"github.com/example/autopsy/internal/store"
 	"github.com/example/autopsy/internal/triage"
@@ -24,8 +26,20 @@ func setupServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := repo.EnsureRole(app.Role{
+		ID:          0,
+		Name:        "viewer",
+		Description: "",
+		Permissions: []string{"read:dashboard"},
+		CreatedAt:   time.Time{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.EnsureAdminUser("admin", "admin"); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = repo.Close() })
-	return NewServer(repo, triage.NewHeuristicAgent(), auth.New("admin", "admin"), testFS)
+	return NewServer(repo, triage.NewHeuristicAgent(), auth.New("test-secret"), testFS)
 }
 
 func newClient(ts *httptest.Server) *http.Client {

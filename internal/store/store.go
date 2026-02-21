@@ -14,5 +14,17 @@ type Repository interface {
 	Playbooks() ([]app.Playbook, error)
 	AddShift(shift app.OnCallShift) (app.OnCallShift, error)
 	OnCall() ([]app.OnCallShift, error)
+
+	EnsureRole(role app.Role) error
+	EnsureAdminUser(username, password string) error
+	AuthenticateUser(username, password string) (app.User, error)
+	GetUser(username string) (app.User, error)
+	ListUsers() ([]app.User, error)
+	CreateUser(username, displayName, password string, roles []string) (app.User, error)
+	ListRoles() ([]app.Role, error)
+	CreateRole(role app.Role) (app.Role, error)
+	CreateInvite(email, role string) (app.Invite, error)
+	ListInvites() ([]app.Invite, error)
+
 	Close() error
 }
