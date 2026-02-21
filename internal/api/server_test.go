@@ -259,7 +259,11 @@ func TestPublicStatusPageReflectsActiveIncident(t *testing.T) {
 	c := newClient(ts)
 	login(t, c, ts.URL)
 
-	createAlert(t, c, ts.URL, map[string]any{"title": "checkout down", "description": "customer checkout timeout spike", "severity": "critical"})
+	createAlert(t, c, ts.URL, map[string]any{
+		"title":       "checkout down",
+		"description": "customer checkout timeout spike",
+		"severity":    "critical",
+	})
 
 	res, err := http.Get(ts.URL + "/api/statuspage")
 	if err != nil {

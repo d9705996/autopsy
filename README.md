@@ -45,6 +45,13 @@ go run .
 Open: <http://localhost:8080>
 Public status page: <http://localhost:8080/status>
 
+
+Quick local quality gate:
+
+```bash
+make check
+```
+
 ## API overview
 
 - `POST /api/login`
