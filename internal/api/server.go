@@ -66,6 +66,11 @@ func (s *Server) handlePublicStatusPage(writer http.ResponseWriter, request *htt
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	services, err := s.store.Services()
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	now := time.Now().UTC()
 	periodHours := 24
@@ -82,7 +87,7 @@ func (s *Server) handlePublicStatusPage(writer http.ResponseWriter, request *htt
 		UpdatedAt:     now,
 		PeriodStart:   periodStart,
 		PeriodEnd:     now,
-		Services:      buildServiceAvailability(incidents, periodStart, now),
+		Services:      buildServiceAvailability(services, incidents, periodStart, now),
 		Incidents:     make([]app.StatusPageIncident, 0, len(incidents)),
 	}
 
@@ -346,6 +351,11 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 		service = alert.Labels["service"]
 	}
 
+	if _, err = s.store.EnsureService(service); err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	incident, err := s.store.CreateIncident(app.Incident{
 		AlertID:       alert.ID,
 		Service:       service,
@@ -523,8 +533,15 @@ func (s *Server) handleToolByID(writer http.ResponseWriter, request *http.Reques
 	}
 }
 
-func buildServiceAvailability(incidents []app.Incident, periodStart, periodEnd time.Time) []app.ServiceAvailability {
+func buildServiceAvailability(services []app.Service, incidents []app.Incident, periodStart, periodEnd time.Time) []app.ServiceAvailability {
 	serviceDowntime := map[string]time.Duration{}
+	for _, service := range services {
+		name := service.Name
+		if name == "" {
+			continue
+		}
+		serviceDowntime[name] = 0
+	}
 	periodDuration := periodEnd.Sub(periodStart)
 	if periodDuration <= 0 {
 		return []app.ServiceAvailability{}
@@ -569,7 +586,7 @@ func buildServiceAvailability(incidents []app.Incident, periodStart, periodEnd t
 	}
 	sort.Strings(serviceNames)
 
-	services := make([]app.ServiceAvailability, 0, len(serviceDowntime))
+	availabilities := make([]app.ServiceAvailability, 0, len(serviceDowntime))
 	for _, service := range serviceNames {
 		downtime := serviceDowntime[service]
 		if downtime < 0 {
@@ -579,7 +596,7 @@ func buildServiceAvailability(incidents []app.Incident, periodStart, periodEnd t
 		if availability < 0 {
 			availability = 0
 		}
-		services = append(services, app.ServiceAvailability{
+		availabilities = append(availabilities, app.ServiceAvailability{
 			Service:             service,
 			AvailabilityPercent: availability,
 			DowntimeMinutes:     int(downtime / time.Minute),
@@ -588,7 +605,7 @@ func buildServiceAvailability(incidents []app.Incident, periodStart, periodEnd t
 		})
 	}
 
-	return services
+	return availabilities
 }
 
 func writeJSON(writer http.ResponseWriter, status int, data any) {

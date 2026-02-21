@@ -83,6 +83,12 @@ func (s *SQLStore) migrate() error {
 			created_at TIMESTAMP NOT NULL,
 			resolved_at TIMESTAMP
 		);`,
+		`CREATE TABLE IF NOT EXISTS services (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS postmortems (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			incident_id TEXT NOT NULL,
@@ -154,6 +160,7 @@ func (s *SQLStore) migrate() error {
 		stmts = []string{
 			`CREATE TABLE IF NOT EXISTS alerts (id BIGSERIAL PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,labels TEXT,payload TEXT,triage TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS incidents (id BIGSERIAL PRIMARY KEY,alert_id TEXT NOT NULL,service TEXT NOT NULL DEFAULT 'unknown',title TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,status_page_url TEXT NOT NULL,created_at TIMESTAMP NOT NULL,resolved_at TIMESTAMP);`,
+			`CREATE TABLE IF NOT EXISTS services (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL DEFAULT '',created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS postmortems (id BIGSERIAL PRIMARY KEY,incident_id TEXT NOT NULL,summary TEXT NOT NULL,timeline TEXT,learnings TEXT,actions TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS playbooks (id BIGSERIAL PRIMARY KEY,service TEXT NOT NULL,title TEXT NOT NULL,steps TEXT,last_updated TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS oncall_shifts (id BIGSERIAL PRIMARY KEY,engineer TEXT NOT NULL,primary_for TEXT NOT NULL,start_at TIMESTAMP NOT NULL,end_at TIMESTAMP NOT NULL,escalation TEXT);`,
@@ -575,6 +582,9 @@ func (s *SQLStore) CreateIncident(in app.Incident) (app.Incident, error) {
 		resolvedAt := s.nowClock()
 		in.ResolvedAt = &resolvedAt
 	}
+	if _, err := s.EnsureService(in.Service); err != nil {
+		return app.Incident{}, err
+	}
 	q := `INSERT INTO incidents (alert_id,service,title,severity,status,status_page_url,created_at,resolved_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7), s.placeholder(8))
 	id, err := s.insertWithID(q, in.AlertID, in.Service, in.Title, string(in.Severity), in.Status, in.StatusPageURL, in.CreatedAt, in.ResolvedAt)
@@ -602,6 +612,54 @@ func (s *SQLStore) Incidents() ([]app.Incident, error) {
 		in.ID = fmt.Sprintf("inc-%06d", id)
 		in.Severity = app.Severity(sev)
 		out = append(out, in)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) EnsureService(name string) (app.Service, error) {
+	if name == "" {
+		name = "unknown"
+	}
+	now := s.nowClock()
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
+	q := fmt.Sprintf(`INSERT INTO services (name,description,created_at) VALUES (%s,%s,%s)`, s.placeholder(1), s.placeholder(2), s.placeholder(3))
+	if s.dialect == postgresDialect {
+		q += ` ON CONFLICT (name) DO NOTHING`
+	} else {
+		q = strings.Replace(q, "INSERT INTO", "INSERT OR IGNORE INTO", 1)
+	}
+	if _, err := s.db.Exec(q, name, "", now); err != nil {
+		return app.Service{}, err
+	}
+
+	lookup := `SELECT id,name,description,created_at FROM services WHERE name=?`
+	if s.dialect == postgresDialect {
+		lookup = `SELECT id,name,description,created_at FROM services WHERE name=$1`
+	}
+	var id int64
+	var svc app.Service
+	if err := s.db.QueryRow(lookup, name).Scan(&id, &svc.Name, &svc.Description, &svc.CreatedAt); err != nil {
+		return app.Service{}, err
+	}
+	svc.ID = fmt.Sprintf("svc-%06d", id)
+	return svc, nil
+}
+
+func (s *SQLStore) Services() ([]app.Service, error) {
+	rows, err := s.db.Query(`SELECT id,name,description,created_at FROM services ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []app.Service
+	for rows.Next() {
+		var id int64
+		var svc app.Service
+		if err := rows.Scan(&id, &svc.Name, &svc.Description, &svc.CreatedAt); err != nil {
+			return nil, err
+		}
+		svc.ID = fmt.Sprintf("svc-%06d", id)
+		out = append(out, svc)
 	}
 	return out, rows.Err()
 }

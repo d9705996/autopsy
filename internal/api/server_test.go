@@ -345,3 +345,38 @@ func TestPublicStatusPageReturnsServiceAvailabilityForPeriod(t *testing.T) {
 		t.Fatalf("expected availability near 66.6 got %f", availability)
 	}
 }
+
+func TestPublicStatusPageIncludesServicesWithoutIncidents(t *testing.T) {
+	repo := store.NewMemoryStore()
+	if _, err := repo.EnsureService("search"); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(repo, triage.NewHeuristicAgent(), auth.New("test-secret"), testFS)
+	ts := httptest.NewServer(server.Router())
+	defer ts.Close()
+
+	res, err := http.Get(ts.URL + "/api/statuspage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+
+	var status map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	services, ok := status["services"].([]any)
+	if !ok || len(services) != 1 {
+		t.Fatalf("expected 1 service availability entry got %#v", status["services"])
+	}
+	svc := services[0].(map[string]any)
+	if svc["service"] != "search" {
+		t.Fatalf("expected search service got %#v", svc["service"])
+	}
+	if svc["availabilityPercent"].(float64) != 100 {
+		t.Fatalf("expected 100 availability got %#v", svc["availabilityPercent"])
+	}
+}
