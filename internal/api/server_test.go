@@ -151,6 +151,94 @@ func TestWarningAlertDoesNotCreateIncident(t *testing.T) {
 	}
 }
 
+func createTool(t *testing.T, c *http.Client, baseURL string, payload map[string]any) string {
+	t.Helper()
+	body, _ := json.Marshal(payload)
+	res, err := c.Post(baseURL+"/api/tools", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 got %d", res.StatusCode)
+	}
+	var created map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	toolID, _ := created["id"].(string)
+	if toolID == "" {
+		t.Fatal("expected tool id")
+	}
+	return toolID
+}
+
+func updateTool(t *testing.T, c *http.Client, baseURL, toolID string, payload map[string]any) {
+	t.Helper()
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest(http.MethodPut, baseURL+"/api/tools/"+toolID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+}
+
+func deleteToolRequest(t *testing.T, c *http.Client, baseURL, toolID string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/api/tools/"+toolID, nil)
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+}
+
+func TestToolsCRUD(t *testing.T) {
+	ts := httptest.NewServer(setupServer(t).Router())
+	defer ts.Close()
+	c := newClient(ts)
+	login(t, c, ts.URL)
+
+	toolID := createTool(t, c, ts.URL, map[string]any{
+		"name":        "Browser runner",
+		"description": "Run Playwright scripts",
+		"server":      "browser_tools",
+		"tool":        "run_playwright_script",
+		"config":      map[string]string{"timeout": "60s"},
+	})
+
+	updateTool(t, c, ts.URL, toolID, map[string]any{
+		"name":        "Browser runner",
+		"description": "Run playwright with screenshots",
+		"server":      "browser_tools",
+		"tool":        "run_playwright_script",
+		"config":      map[string]string{"timeout": "90s"},
+	})
+
+	listRes, err := c.Get(ts.URL + "/api/tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listRes.Body.Close()
+	var tools []map[string]any
+	if err := json.NewDecoder(listRes.Body).Decode(&tools); err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 tool got %d", len(tools))
+	}
+
+	deleteToolRequest(t, c, ts.URL, toolID)
+}
+
 func TestUnauthorizedWithoutLogin(t *testing.T) {
 	ts := httptest.NewServer(setupServer(t).Router())
 	defer ts.Close()

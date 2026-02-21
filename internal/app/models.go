@@ -78,6 +78,16 @@ type OnCallShift struct {
 	Escalation []string  `json:"escalation"`
 }
 
+type MCPTool struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Server      string            `json:"server"`
+	Tool        string            `json:"tool"`
+	Config      map[string]string `json:"config"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
+}
 type User struct {
 	ID           int64     `json:"id"`
 	Username     string    `json:"username"`

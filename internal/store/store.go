@@ -15,6 +15,11 @@ type Repository interface {
 	Playbooks() ([]app.Playbook, error)
 	AddShift(shift app.OnCallShift) (app.OnCallShift, error)
 	OnCall() ([]app.OnCallShift, error)
+	CreateTool(tool app.MCPTool) (app.MCPTool, error)
+	Tools() ([]app.MCPTool, error)
+	Tool(toolID string) (app.MCPTool, error)
+	UpdateTool(toolID string, tool app.MCPTool) (app.MCPTool, error)
+	DeleteTool(toolID string) error
 
 	EnsureRole(role app.Role) error
 	EnsureAdminUser(username, password string) error

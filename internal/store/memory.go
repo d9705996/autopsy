@@ -10,13 +10,17 @@ import (
 	"github.com/example/autopsy/internal/app"
 )
 
-var errNotImplemented = errors.New("not implemented")
+var (
+	errNotImplemented = errors.New("not implemented")
+	errToolNotFound   = errors.New("tool not found")
+)
 
 type MemoryStore struct {
 	mu        sync.RWMutex
 	counter   uint64
 	alerts    []app.Alert
 	incidents []app.Incident
+	tools     []app.MCPTool
 }
 
 func NewMemoryStore() *MemoryStore  { return &MemoryStore{} }
@@ -95,8 +99,66 @@ func (s *MemoryStore) AddPlaybook(pb app.Playbook) (app.Playbook, error)       {
 func (s *MemoryStore) Playbooks() ([]app.Playbook, error)                      { return []app.Playbook{}, nil }
 func (s *MemoryStore) AddShift(shift app.OnCallShift) (app.OnCallShift, error) { return shift, nil }
 func (s *MemoryStore) OnCall() ([]app.OnCallShift, error)                      { return []app.OnCallShift{}, nil }
-func (s *MemoryStore) EnsureRole(_ app.Role) error                             { return nil }
-func (s *MemoryStore) EnsureAdminUser(_, _ string) error                       { return nil }
+
+func (s *MemoryStore) CreateTool(tool app.MCPTool) (app.MCPTool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	tool.ID = s.nextID("tool")
+	tool.CreatedAt = now
+	tool.UpdatedAt = now
+	s.tools = append(s.tools, tool)
+	return tool, nil
+}
+
+func (s *MemoryStore) Tools() ([]app.MCPTool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]app.MCPTool, len(s.tools))
+	copy(out, s.tools)
+	return out, nil
+}
+
+func (s *MemoryStore) Tool(toolID string) (app.MCPTool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, tool := range s.tools {
+		if tool.ID == toolID {
+			return tool, nil
+		}
+	}
+	return app.MCPTool{}, errToolNotFound
+}
+
+func (s *MemoryStore) UpdateTool(toolID string, tool app.MCPTool) (app.MCPTool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.tools {
+		if s.tools[i].ID == toolID {
+			tool.ID = toolID
+			tool.CreatedAt = s.tools[i].CreatedAt
+			tool.UpdatedAt = time.Now().UTC()
+			s.tools[i] = tool
+			return tool, nil
+		}
+	}
+	return app.MCPTool{}, errToolNotFound
+}
+
+func (s *MemoryStore) DeleteTool(toolID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.tools {
+		if s.tools[i].ID == toolID {
+			s.tools = append(s.tools[:i], s.tools[i+1:]...)
+			return nil
+		}
+	}
+	return errToolNotFound
+}
+
+func (s *MemoryStore) EnsureRole(_ app.Role) error       { return nil }
+func (s *MemoryStore) EnsureAdminUser(_, _ string) error { return nil }
 func (s *MemoryStore) AuthenticateUser(_, _ string) (app.User, error) {
 	return app.User{}, errNotImplemented
 }

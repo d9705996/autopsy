@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,6 +105,16 @@ func (s *SQLStore) migrate() error {
 			end_at TIMESTAMP NOT NULL,
 			escalation TEXT
 		);`,
+		`CREATE TABLE IF NOT EXISTS tools (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL,
+			server TEXT NOT NULL,
+			tool TEXT NOT NULL,
+			config TEXT,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE,
@@ -144,6 +155,7 @@ func (s *SQLStore) migrate() error {
 			`CREATE TABLE IF NOT EXISTS postmortems (id BIGSERIAL PRIMARY KEY,incident_id TEXT NOT NULL,summary TEXT NOT NULL,timeline TEXT,learnings TEXT,actions TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS playbooks (id BIGSERIAL PRIMARY KEY,service TEXT NOT NULL,title TEXT NOT NULL,steps TEXT,last_updated TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS oncall_shifts (id BIGSERIAL PRIMARY KEY,engineer TEXT NOT NULL,primary_for TEXT NOT NULL,start_at TIMESTAMP NOT NULL,end_at TIMESTAMP NOT NULL,escalation TEXT);`,
+			`CREATE TABLE IF NOT EXISTS tools (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL,server TEXT NOT NULL,tool TEXT NOT NULL,config TEXT,created_at TIMESTAMP NOT NULL,updated_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY,username TEXT NOT NULL UNIQUE,display_name TEXT NOT NULL,password_hash TEXT NOT NULL,enabled BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS roles (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL,permissions TEXT NOT NULL,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS user_roles (user_id BIGINT NOT NULL,role_id BIGINT NOT NULL,PRIMARY KEY (user_id, role_id));`,
@@ -676,9 +688,96 @@ func (s *SQLStore) OnCall() ([]app.OnCallShift, error) {
 	return out, rows.Err()
 }
 
-func parseNumericID(prefixed string) int64 {
-	var prefix string
+func (s *SQLStore) CreateTool(tool app.MCPTool) (app.MCPTool, error) {
+	now := s.nowClock()
+	tool.CreatedAt = now
+	tool.UpdatedAt = now
+	configJSON, err := marshalJSON(tool.Config)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	q := `INSERT INTO tools (name,description,server,tool,config,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7))
+	id, err := s.insertWithID(q, tool.Name, tool.Description, tool.Server, tool.Tool, configJSON, tool.CreatedAt, tool.UpdatedAt)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	tool.ID = fmt.Sprintf("tool-%06d", id)
+	return tool, nil
+}
+
+func (s *SQLStore) Tools() ([]app.MCPTool, error) {
+	rows, err := s.db.Query(`SELECT id,name,description,server,tool,config,created_at,updated_at FROM tools ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []app.MCPTool
+	for rows.Next() {
+		var id int64
+		var config string
+		var tool app.MCPTool
+		if err := rows.Scan(&id, &tool.Name, &tool.Description, &tool.Server, &tool.Tool, &config, &tool.CreatedAt, &tool.UpdatedAt); err != nil {
+			return nil, err
+		}
+		tool.ID = fmt.Sprintf("tool-%06d", id)
+		_ = json.Unmarshal([]byte(config), &tool.Config)
+		out = append(out, tool)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) Tool(toolID string) (app.MCPTool, error) {
+	q := `SELECT id,name,description,server,tool,config,created_at,updated_at FROM tools WHERE id=?`
+	if s.dialect == postgresDialect {
+		q = `SELECT id,name,description,server,tool,config,created_at,updated_at FROM tools WHERE id=$1`
+	}
 	var id int64
-	_, _ = fmt.Sscanf(prefixed, "%3s-%d", &prefix, &id)
+	var config string
+	var tool app.MCPTool
+	if err := s.db.QueryRow(q, parseNumericID(toolID)).Scan(&id, &tool.Name, &tool.Description, &tool.Server, &tool.Tool, &config, &tool.CreatedAt, &tool.UpdatedAt); err != nil {
+		return app.MCPTool{}, err
+	}
+	tool.ID = fmt.Sprintf("tool-%06d", id)
+	_ = json.Unmarshal([]byte(config), &tool.Config)
+	return tool, nil
+}
+
+func (s *SQLStore) UpdateTool(toolID string, tool app.MCPTool) (app.MCPTool, error) {
+	tool.UpdatedAt = s.nowClock()
+	configJSON, err := marshalJSON(tool.Config)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	q := `UPDATE tools SET name=%s,description=%s,server=%s,tool=%s,config=%s,updated_at=%s WHERE id=%s`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7))
+	if _, err = s.db.Exec(q, tool.Name, tool.Description, tool.Server, tool.Tool, configJSON, tool.UpdatedAt, parseNumericID(toolID)); err != nil {
+		return app.MCPTool{}, err
+	}
+	stored, err := s.Tool(toolID)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	return stored, nil
+}
+
+func (s *SQLStore) DeleteTool(toolID string) error {
+	q := `DELETE FROM tools WHERE id=?`
+	if s.dialect == postgresDialect {
+		q = `DELETE FROM tools WHERE id=$1`
+	}
+	_, err := s.db.Exec(q, parseNumericID(toolID))
+	return err
+}
+
+func parseNumericID(prefixed string) int64 {
+	parts := strings.SplitN(prefixed, "-", 2)
+	if len(parts) != 2 {
+		return 0
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0
+	}
 	return id
 }

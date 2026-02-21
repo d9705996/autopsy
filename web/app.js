@@ -1,5 +1,7 @@
 let alertsCache = [];
 let selectedAlertID = '';
+let toolsCache = [];
+let editingToolID = '';
 
 async function request(path, options = {}) {
   const res = await fetch(path, options);
@@ -9,66 +11,117 @@ async function request(path, options = {}) {
   return res.json();
 }
 
+function showLoggedOut() {
+  document.getElementById('login')?.classList.remove('hidden');
+  document.getElementById('app-shell')?.classList.add('hidden');
+}
+
+function showLoggedIn() {
+  document.getElementById('login')?.classList.add('hidden');
+  document.getElementById('app-shell')?.classList.remove('hidden');
+}
+
 async function login() {
   const username = document.getElementById('u').value;
   const password = document.getElementById('p').value;
   await request('/api/login', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({username, password})
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
   });
-  document.getElementById('login').classList.add('hidden');
-  document.getElementById('dashboard').classList.remove('hidden');
-  await loadSession();
-  await loadData();
+  await bootPage();
 }
 
 async function logout() {
   await request('/api/logout', { method: 'POST' });
-  document.getElementById('dashboard').classList.add('hidden');
-  document.getElementById('login').classList.remove('hidden');
+  showLoggedOut();
 }
 
-async function loadSession() {
+async function bootPage() {
   try {
     const me = await request('/api/me');
-    document.getElementById('whoami').textContent = `Logged in as ${me.username} (${me.roles.join(', ')})`;
+    showLoggedIn();
+    const who = document.getElementById('whoami');
+    if (who) {
+      who.textContent = `Logged in as ${me.username} (${me.roles.join(', ')})`;
+    }
     const isAdmin = me.roles.includes('admin');
-    document.getElementById('admin-panel').classList.toggle('hidden', !isAdmin);
-    if (isAdmin) {
+    document.querySelectorAll('[data-admin-only="true"]').forEach((el) => {
+      el.classList.toggle('hidden', !isAdmin);
+    });
+
+    const page = document.body.dataset.page;
+    if (page === 'dashboard') {
+      await loadDashboard();
+    }
+    if (page === 'alerts') {
+      await loadAlertsPage();
+    }
+    if (page === 'incidents') {
+      await loadIncidentsPage();
+    }
+    if (page === 'tools') {
+      await loadToolsPage();
+    }
+    if (page === 'admin' && isAdmin) {
       await Promise.all([loadUsers(), loadRoles(), loadInvites()]);
     }
-  } catch (_) {}
+  } catch (_) {
+    showLoggedOut();
+  }
+}
+
+function navMarkup() {
+  return `
+  <header class="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/40">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 p-3">
+          <svg class="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19h16M6 17l2-9h8l2 9M9 8a3 3 0 0 1 6 0" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <h1 class="text-2xl font-semibold tracking-tight">Autopsy Incident Response</h1>
+          <p class="text-sm text-slate-400">Enterprise alert triage and MCP tool management.</p>
+        </div>
+      </div>
+      <button onclick="logout()" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Logout</button>
+    </div>
+    <nav class="mt-4 flex flex-wrap gap-2 text-sm">
+      <a href="/" class="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800">Dashboard</a>
+      <a href="/alerts.html" class="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800">Alerts</a>
+      <a href="/incidents.html" class="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800">Incidents</a>
+      <a href="/tools.html" class="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800">MCP Tools</a>
+      <a href="/admin.html" data-admin-only="true" class="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800">Admin</a>
+    </nav>
+    <p id="whoami" class="mt-3 text-xs text-slate-400"></p>
+  </header>`;
 }
 
 async function seedCriticalAlert() {
   await request('/api/alerts', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      source: 'grafana',
-      title: 'API 5xx spike',
-      description: 'Timeout errors above SLO objective and customer checkout impact',
-      severity: 'critical',
-      labels: {service: 'api', metric: 'http_5xx_rate'}
-    })
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: 'grafana', title: 'API 5xx spike', description: 'Timeout errors above SLO objective and customer checkout impact', severity: 'critical', labels: { service: 'api', metric: 'http_5xx_rate' } })
   });
-  await loadData();
+  if (document.body.dataset.page === 'dashboard') await loadDashboard();
+  if (document.body.dataset.page === 'alerts') await loadAlertsPage();
 }
 
 async function seedAutoFixAlert() {
   await request('/api/alerts', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      source: 'queue-monitor',
-      title: 'Retry queue growth',
-      description: 'retry backlog increased by 25% over baseline',
-      severity: 'warning',
-      labels: {service: 'worker', metric: 'retry_queue_depth'}
-    })
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: 'queue-monitor', title: 'Retry queue growth', description: 'retry backlog increased by 25% over baseline', severity: 'warning', labels: { service: 'worker', metric: 'retry_queue_depth' } })
   });
-  await loadData();
+  if (document.body.dataset.page === 'dashboard') await loadDashboard();
+  if (document.body.dataset.page === 'alerts') await loadAlertsPage();
+}
+
+async function loadDashboard() {
+  const [alerts, incidents, tools] = await Promise.all([request('/api/alerts'), request('/api/incidents'), request('/api/tools')]);
+  document.getElementById('kpi-alerts').textContent = alerts.length;
+  document.getElementById('kpi-incidents').textContent = incidents.length;
+  document.getElementById('kpi-tools').textContent = tools.length;
+  document.getElementById('recent-alerts').innerHTML = alerts.slice(0, 5).map((a) => `<li>${a.title} · <span class="text-slate-400">${a.status}</span></li>`).join('') || '<li class="text-slate-500">No alerts yet.</li>';
+  document.getElementById('recent-incidents').innerHTML = incidents.slice(0, 5).map((i) => `<li>${i.title} · <span class="text-slate-400">${i.status}</span></li>`).join('') || '<li class="text-slate-500">No incidents yet.</li>';
 }
 
 function badgeClassForDecision(decision) {
@@ -78,144 +131,142 @@ function badgeClassForDecision(decision) {
   return 'border-slate-600 bg-slate-800 text-slate-300';
 }
 
-function renderAlerts(alerts) {
+async function loadAlertsPage() {
+  alertsCache = await request('/api/alerts');
   const host = document.getElementById('alerts-list');
-  if (!alerts.length) {
+  if (!alertsCache.length) {
     host.innerHTML = '<p class="text-sm text-slate-400">No alerts received yet.</p>';
     renderTimeline(null);
     return;
   }
-  if (!selectedAlertID || !alerts.some((a) => a.id === selectedAlertID)) {
-    selectedAlertID = alerts[0].id;
-  }
+  if (!selectedAlertID || !alertsCache.some((a) => a.id === selectedAlertID)) selectedAlertID = alertsCache[0].id;
 
-  host.innerHTML = alerts.map((alert) => {
+  host.innerHTML = alertsCache.map((alert) => {
     const triage = alert.triage || {};
     const decision = triage.decision || 'pending';
     const active = alert.id === selectedAlertID;
-    return `
-      <article class="cursor-pointer rounded-xl border p-4 transition ${active ? 'border-cyan-400/60 bg-cyan-500/5' : 'border-slate-800 bg-slate-950 hover:border-slate-700'}" onclick="selectAlert('${alert.id}')">
-        <div class="mb-2 flex items-center justify-between gap-3">
-          <h4 class="font-medium text-slate-100">${alert.title}</h4>
-          <span class="text-xs text-slate-500">${alert.id}</span>
-        </div>
-        <div class="mb-2 flex flex-wrap gap-2 text-xs">
-          <span class="rounded-full border border-slate-700 bg-slate-800 px-2 py-1 text-slate-200">${alert.severity}</span>
-          <span class="rounded-full border border-blue-400/40 bg-blue-500/10 px-2 py-1 text-blue-300">${alert.status || 'received'}</span>
-          <span class="rounded-full border px-2 py-1 ${badgeClassForDecision(decision)}">${decision}</span>
-        </div>
-        <p class="text-sm text-slate-400">${alert.description}</p>
-      </article>
-    `;
+    return `<article class="cursor-pointer rounded-xl border p-4 ${active ? 'border-cyan-400/60 bg-cyan-500/5' : 'border-slate-800 bg-slate-950'}" onclick="selectAlert('${alert.id}')">
+      <div class="mb-2 flex items-center justify-between"><h4>${alert.title}</h4><span class="text-xs text-slate-500">${alert.id}</span></div>
+      <div class="mb-2 flex flex-wrap gap-2 text-xs">
+      <span class="rounded-full border border-slate-700 bg-slate-800 px-2 py-1">${alert.severity}</span>
+      <span class="rounded-full border border-blue-400/40 bg-blue-500/10 px-2 py-1 text-blue-300">${alert.status || 'received'}</span>
+      <span class="rounded-full border px-2 py-1 ${badgeClassForDecision(decision)}">${decision}</span></div>
+      <p class="text-sm text-slate-400">${alert.description}</p></article>`;
   }).join('');
-
-  renderTimeline(alerts.find((a) => a.id === selectedAlertID) || null);
+  renderTimeline(alertsCache.find((a) => a.id === selectedAlertID));
 }
+
+function selectAlert(id) { selectedAlertID = id; loadAlertsPage(); }
 
 function renderTimeline(alert) {
-  const timelineEmpty = document.getElementById('timeline-empty');
-  const timelineList = document.getElementById('timeline-list');
+  const empty = document.getElementById('timeline-empty');
+  const list = document.getElementById('timeline-list');
   const outcome = document.getElementById('triage-outcome');
-
   if (!alert || !alert.triage || !alert.triage.timeline) {
-    timelineEmpty.classList.remove('hidden');
-    timelineList.classList.add('hidden');
-    timelineList.innerHTML = '';
-    outcome.classList.add('hidden');
-    outcome.innerHTML = '';
-    return;
+    empty.classList.remove('hidden'); list.classList.add('hidden'); outcome.classList.add('hidden');
+    list.innerHTML = ''; outcome.innerHTML = ''; return;
   }
-
-  timelineEmpty.classList.add('hidden');
-  timelineList.classList.remove('hidden');
-  timelineList.innerHTML = alert.triage.timeline.map((step) => `
-    <li class="relative">
-      <span class="absolute -left-[22px] top-1.5 h-2.5 w-2.5 rounded-full bg-cyan-400"></span>
-      <p class="text-sm font-medium text-slate-100">${step.phase} <span class="text-xs text-slate-500">· ${new Date(step.timestamp).toLocaleTimeString()}</span></p>
-      <p class="text-sm text-slate-400">${step.detail}</p>
-    </li>
-  `).join('');
-
+  empty.classList.add('hidden'); list.classList.remove('hidden');
+  list.innerHTML = alert.triage.timeline.map((step) => `<li class="relative"><span class="absolute -left-[22px] top-1.5 h-2.5 w-2.5 rounded-full bg-cyan-400"></span><p class="text-sm font-medium">${step.phase} <span class="text-xs text-slate-500">· ${new Date(step.timestamp).toLocaleTimeString()}</span></p><p class="text-sm text-slate-400">${step.detail}</p></li>`).join('');
   const triage = alert.triage;
-  const fixPlan = triage.autoFixPlan && triage.autoFixPlan.length
-    ? `<h4 class="mt-3 text-sm font-semibold text-slate-200">Auto-fix plan</h4><ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-300">${triage.autoFixPlan.map((p) => `<li>${p}</li>`).join('')}</ul>`
-    : '';
-  const issue = triage.issueTitle ? `<p class="mt-2 text-sm text-slate-300"><strong>Issue to create:</strong> ${triage.issueTitle}</p>` : '';
   outcome.classList.remove('hidden');
-  outcome.innerHTML = `
-    <h4 class="text-sm font-semibold text-cyan-300">Decision: ${triage.decision}</h4>
-    <p class="mt-2 text-sm text-slate-300">${triage.summary}</p>
-    <p class="mt-2 text-sm text-slate-300"><strong>Likely root cause:</strong> ${triage.likelyRootCause}</p>
-    ${issue}
-    ${fixPlan}
-  `;
+  outcome.innerHTML = `<h4 class="text-sm font-semibold text-cyan-300">Decision: ${triage.decision}</h4><p class="mt-2 text-sm text-slate-300">${triage.summary}</p><p class="mt-2 text-sm text-slate-300"><strong>Likely root cause:</strong> ${triage.likelyRootCause}</p>`;
 }
 
-function selectAlert(id) {
-  selectedAlertID = id;
-  renderAlerts(alertsCache);
+async function loadIncidentsPage() {
+  const incidents = await request('/api/incidents');
+  document.getElementById('incidents-table').innerHTML = incidents.map((inc) => `<tr class="border-b border-slate-800"><td class="px-3 py-2">${inc.id}</td><td class="px-3 py-2">${inc.title}</td><td class="px-3 py-2">${inc.severity}</td><td class="px-3 py-2">${inc.status}</td></tr>`).join('') || '<tr><td colspan="4" class="px-3 py-4 text-slate-500">No incidents.</td></tr>';
 }
 
-async function loadData() {
-  const [alerts, incidents, postmortems, playbooks, oncall] = await Promise.all([
-    request('/api/alerts'),
-    request('/api/incidents'),
-    request('/api/postmortems'),
-    request('/api/playbooks'),
-    request('/api/oncall')
-  ]);
-  alertsCache = alerts;
-  renderAlerts(alerts);
-  document.getElementById('out').textContent = JSON.stringify({alerts, incidents, postmortems, playbooks, oncall}, null, 2);
+function parseConfig(raw) {
+  const config = {};
+  raw.split('\n').map((line) => line.trim()).filter(Boolean).forEach((line) => {
+    const [k, ...rest] = line.split('=');
+    if (k && rest.length) config[k.trim()] = rest.join('=').trim();
+  });
+  return config;
 }
 
-async function loadUsers() {
-  const users = await request('/api/admin/users');
-  document.getElementById('users-out').textContent = JSON.stringify(users, null, 2);
+function renderTools(tools) {
+  const host = document.getElementById('tools-list');
+  host.innerHTML = tools.map((tool) => `<article class="rounded-xl border border-slate-800 bg-slate-950 p-4"><div class="flex items-center justify-between"><h4 class="font-medium">${tool.name}</h4><span class="text-xs text-slate-500">${tool.id}</span></div><p class="text-sm text-slate-400">${tool.description}</p><p class="mt-2 text-xs text-slate-500">${tool.server} · ${tool.tool}</p><div class="mt-3 flex gap-2"><button onclick="editTool('${tool.id}')" class="rounded bg-slate-700 px-2 py-1 text-xs">Edit</button><button onclick="deleteTool('${tool.id}')" class="rounded bg-rose-600 px-2 py-1 text-xs">Delete</button></div></article>`).join('') || '<p class="text-sm text-slate-500">No MCP tools configured.</p>';
 }
+
+async function loadToolsPage() {
+  toolsCache = await request('/api/tools');
+  renderTools(toolsCache);
+}
+
+function editTool(id) {
+  const tool = toolsCache.find((item) => item.id === id);
+  if (!tool) return;
+  editingToolID = id;
+  document.getElementById('tool-name').value = tool.name;
+  document.getElementById('tool-desc').value = tool.description;
+  document.getElementById('tool-server').value = tool.server;
+  document.getElementById('tool-tool').value = tool.tool;
+  document.getElementById('tool-config').value = Object.entries(tool.config || {}).map(([k, v]) => `${k}=${v}`).join('\n');
+  document.getElementById('tool-submit').textContent = 'Update Tool';
+}
+
+function resetToolForm() {
+  editingToolID = '';
+  document.getElementById('tool-form').reset();
+  document.getElementById('tool-submit').textContent = 'Create Tool';
+}
+
+async function saveTool() {
+  const payload = {
+    name: document.getElementById('tool-name').value,
+    description: document.getElementById('tool-desc').value,
+    server: document.getElementById('tool-server').value,
+    tool: document.getElementById('tool-tool').value,
+    config: parseConfig(document.getElementById('tool-config').value)
+  };
+  if (!editingToolID) {
+    await request('/api/tools', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  } else {
+    await request(`/api/tools/${editingToolID}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  }
+  resetToolForm();
+  await loadToolsPage();
+}
+
+async function deleteTool(id) {
+  await request(`/api/tools/${id}`, { method: 'DELETE' });
+  await loadToolsPage();
+}
+
+async function loadUsers() { document.getElementById('users-out').textContent = JSON.stringify(await request('/api/admin/users'), null, 2); }
+async function loadRoles() { document.getElementById('roles-out').textContent = JSON.stringify(await request('/api/admin/roles'), null, 2); }
+async function loadInvites() { document.getElementById('invites-out').textContent = JSON.stringify(await request('/api/admin/invites'), null, 2); }
 
 async function createUser() {
   const username = document.getElementById('new-username').value;
   const displayName = document.getElementById('new-display').value;
   const password = document.getElementById('new-password').value;
   const roles = document.getElementById('new-roles').value.split(',').map((s) => s.trim()).filter(Boolean);
-  await request('/api/admin/users', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({username, displayName, password, roles})
-  });
+  await request('/api/admin/users', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username, displayName, password, roles }) });
   await loadUsers();
-}
-
-async function loadRoles() {
-  const roles = await request('/api/admin/roles');
-  document.getElementById('roles-out').textContent = JSON.stringify(roles, null, 2);
 }
 
 async function createRole() {
   const name = document.getElementById('role-name').value;
   const description = document.getElementById('role-desc').value;
   const permissions = document.getElementById('role-perms').value.split(',').map((s) => s.trim()).filter(Boolean);
-  await request('/api/admin/roles', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name, description, permissions})
-  });
+  await request('/api/admin/roles', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name, description, permissions }) });
   await loadRoles();
-}
-
-async function loadInvites() {
-  const invites = await request('/api/admin/invites');
-  document.getElementById('invites-out').textContent = JSON.stringify(invites, null, 2);
 }
 
 async function createInvite() {
   const email = document.getElementById('invite-email').value;
   const role = document.getElementById('invite-role').value;
-  await request('/api/admin/invites', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({email, role})
-  });
+  await request('/api/admin/invites', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, role }) });
   await loadInvites();
 }
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const root = document.getElementById('nav-root');
+  if (root) root.innerHTML = navMarkup();
+  await bootPage();
+});
