@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/example/autopsy/internal/app"
 	"github.com/example/autopsy/internal/auth"
@@ -25,7 +26,13 @@ func setupServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.EnsureRole(app.Role{Name: "viewer", Permissions: []string{"read:dashboard"}}); err != nil {
+	if err := repo.EnsureRole(app.Role{
+		ID:          0,
+		Name:        "viewer",
+		Description: "",
+		Permissions: []string{"read:dashboard"},
+		CreatedAt:   time.Time{},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.EnsureAdminUser("admin", "admin"); err != nil {

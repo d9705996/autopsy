@@ -10,6 +10,8 @@ import (
 	"github.com/example/autopsy/internal/app"
 )
 
+var errNotImplemented = errors.New("not implemented")
+
 type MemoryStore struct {
 	mu      sync.RWMutex
 	counter uint64
@@ -32,12 +34,15 @@ func (s *MemoryStore) SaveAlert(a app.Alert) (app.Alert, error) {
 	s.alerts = append(s.alerts, a)
 	return a, nil
 }
-func (s *MemoryStore) UpdateAlertTriage(alertID string, triage app.TriageReport) error { return nil }
-func (s *MemoryStore) Alerts() ([]app.Alert, error)                                    { return s.alerts, nil }
+
+func (s *MemoryStore) UpdateAlertTriage(_ string, _ app.TriageReport) error { return nil }
+func (s *MemoryStore) Alerts() ([]app.Alert, error)                         { return s.alerts, nil }
+
 func (s *MemoryStore) CreateIncident(incident app.Incident) (app.Incident, error) {
 	incident.ID = s.nextID("inc")
 	return incident, nil
 }
+
 func (s *MemoryStore) Incidents() ([]app.Incident, error)                      { return []app.Incident{}, nil }
 func (s *MemoryStore) AddPostMortem(pm app.PostMortem) (app.PostMortem, error) { return pm, nil }
 func (s *MemoryStore) PostMortems() ([]app.PostMortem, error)                  { return []app.PostMortem{}, nil }
@@ -45,19 +50,19 @@ func (s *MemoryStore) AddPlaybook(pb app.Playbook) (app.Playbook, error)       {
 func (s *MemoryStore) Playbooks() ([]app.Playbook, error)                      { return []app.Playbook{}, nil }
 func (s *MemoryStore) AddShift(shift app.OnCallShift) (app.OnCallShift, error) { return shift, nil }
 func (s *MemoryStore) OnCall() ([]app.OnCallShift, error)                      { return []app.OnCallShift{}, nil }
-func (s *MemoryStore) EnsureRole(role app.Role) error                          { return nil }
-func (s *MemoryStore) EnsureAdminUser(username, password string) error         { return nil }
-func (s *MemoryStore) AuthenticateUser(username, password string) (app.User, error) {
-	return app.User{}, errors.New("not implemented")
+func (s *MemoryStore) EnsureRole(_ app.Role) error                             { return nil }
+func (s *MemoryStore) EnsureAdminUser(_, _ string) error                       { return nil }
+func (s *MemoryStore) AuthenticateUser(_, _ string) (app.User, error) {
+	return app.User{}, errNotImplemented
 }
-func (s *MemoryStore) GetUser(username string) (app.User, error) {
-	return app.User{}, errors.New("not implemented")
+func (s *MemoryStore) GetUser(_ string) (app.User, error) { return app.User{}, errNotImplemented }
+func (s *MemoryStore) ListUsers() ([]app.User, error)     { return []app.User{}, nil }
+
+func (s *MemoryStore) CreateUser(_, _, _ string, _ []string) (app.User, error) {
+	return app.User{}, errNotImplemented
 }
-func (s *MemoryStore) ListUsers() ([]app.User, error) { return []app.User{}, nil }
-func (s *MemoryStore) CreateUser(username, displayName, password string, roles []string) (app.User, error) {
-	return app.User{}, errors.New("not implemented")
-}
-func (s *MemoryStore) ListRoles() ([]app.Role, error)                      { return []app.Role{}, nil }
-func (s *MemoryStore) CreateRole(role app.Role) (app.Role, error)          { return role, nil }
-func (s *MemoryStore) CreateInvite(email, role string) (app.Invite, error) { return app.Invite{}, nil }
-func (s *MemoryStore) ListInvites() ([]app.Invite, error)                  { return []app.Invite{}, nil }
+
+func (s *MemoryStore) ListRoles() ([]app.Role, error)               { return []app.Role{}, nil }
+func (s *MemoryStore) CreateRole(role app.Role) (app.Role, error)   { return role, nil }
+func (s *MemoryStore) CreateInvite(_, _ string) (app.Invite, error) { return app.Invite{}, nil }
+func (s *MemoryStore) ListInvites() ([]app.Invite, error)           { return []app.Invite{}, nil }

@@ -38,7 +38,10 @@ func (s *Server) Router() http.Handler {
 
 	protected.Handle("/api/admin/users", s.auth.RequirePermission("admin:users", http.HandlerFunc(s.handleAdminUsers)))
 	protected.Handle("/api/admin/roles", s.auth.RequirePermission("admin:roles", http.HandlerFunc(s.handleAdminRoles)))
-	protected.Handle("/api/admin/invites", s.auth.RequirePermission("admin:invites", http.HandlerFunc(s.handleAdminInvites)))
+	protected.Handle(
+		"/api/admin/invites",
+		s.auth.RequirePermission("admin:invites", http.HandlerFunc(s.handleAdminInvites)),
+	)
 
 	mux.Handle("/api/", s.auth.Middleware(protected))
 	mux.HandleFunc("/", s.handleUI)
@@ -97,7 +100,12 @@ func (s *Server) handleLogin(writer http.ResponseWriter, request *http.Request) 
 	}
 
 	s.auth.SetSession(writer, user.Username, user.Roles)
-	writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "authMode": "local", "ssoEnabled": false, "user": user})
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"authMode":   "local",
+		"ssoEnabled": false,
+		"user":       user,
+	})
 }
 
 func (s *Server) handleLogout(writer http.ResponseWriter, request *http.Request) {
@@ -258,7 +266,13 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	incident, err := s.store.CreateIncident(app.Incident{AlertID: alert.ID, Title: "Auto-created incident for critical alert: " + alert.Title, Severity: alert.Severity, Status: "investigating", StatusPageURL: "/status/" + alert.ID})
+	incident, err := s.store.CreateIncident(app.Incident{
+		AlertID:       alert.ID,
+		Title:         "Auto-created incident for critical alert: " + alert.Title,
+		Severity:      alert.Severity,
+		Status:        "investigating",
+		StatusPageURL: "/status/" + alert.ID,
+	})
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return

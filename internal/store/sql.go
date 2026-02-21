@@ -16,6 +16,12 @@ import (
 
 const postgresDialect = "postgres"
 
+var (
+	errRoleNameRequired = errors.New("role name is required")
+	errUserDisabled     = errors.New("user disabled")
+	errInvalidCreds     = errors.New("invalid credentials")
+)
+
 type SQLStore struct {
 	db       *sql.DB
 	dialect  string
@@ -130,7 +136,6 @@ func (s *SQLStore) migrate() error {
 	}
 
 	if s.dialect == postgresDialect {
-		stmts = strings.Split(strings.ReplaceAll(strings.Join(stmts, "\n"), "INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY"), "\n")
 		// Keep compatibility with existing migration path by executing postgres specific DDL below.
 		stmts = []string{
 			`CREATE TABLE IF NOT EXISTS alerts (id BIGSERIAL PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,severity TEXT NOT NULL,labels TEXT,payload TEXT,triage TEXT,created_at TIMESTAMP NOT NULL);`,
@@ -180,7 +185,7 @@ func marshalJSON(v any) (string, error) {
 
 func (s *SQLStore) EnsureRole(role app.Role) error {
 	if role.Name == "" {
-		return errors.New("role name is required")
+		return errRoleNameRequired
 	}
 	if len(role.Permissions) == 0 {
 		role.Permissions = []string{"read:dashboard"}
@@ -189,6 +194,7 @@ func (s *SQLStore) EnsureRole(role app.Role) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
 	q := fmt.Sprintf(`INSERT INTO roles (name,description,permissions,created_at) VALUES (%s,%s,%s,%s)`, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4))
 	if s.dialect == postgresDialect {
 		q += ` ON CONFLICT (name) DO NOTHING`
@@ -207,6 +213,7 @@ func (s *SQLStore) EnsureAdminUser(username, password string) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
 	q := fmt.Sprintf(`INSERT INTO users (username,display_name,password_hash,enabled,created_at) VALUES (%s,%s,%s,%s,%s)`, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5))
 	if s.dialect == postgresDialect {
 		q += ` ON CONFLICT (username) DO NOTHING`
@@ -225,10 +232,15 @@ func (s *SQLStore) EnsureAdminUser(username, password string) error {
 
 func (s *SQLStore) assignRole(userID int64, roleName string) error {
 	var roleID int64
-	q := fmt.Sprintf(`SELECT id FROM roles WHERE name=%s`, s.placeholder(1))
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
+	q := `SELECT id FROM roles WHERE name=?`
+	if s.dialect == postgresDialect {
+		q = `SELECT id FROM roles WHERE name=$1`
+	}
 	if err := s.db.QueryRow(q, roleName).Scan(&roleID); err != nil {
 		return err
 	}
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
 	insert := fmt.Sprintf(`INSERT INTO user_roles (user_id,role_id) VALUES (%s,%s)`, s.placeholder(1), s.placeholder(2))
 	if s.dialect == postgresDialect {
 		insert += ` ON CONFLICT (user_id, role_id) DO NOTHING`
@@ -245,16 +257,20 @@ func (s *SQLStore) AuthenticateUser(username, password string) (app.User, error)
 		return app.User{}, err
 	}
 	if !user.Enabled {
-		return app.User{}, errors.New("user disabled")
+		return app.User{}, errUserDisabled
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return app.User{}, errors.New("invalid credentials")
+		return app.User{}, errInvalidCreds
 	}
 	return user, nil
 }
 
 func (s *SQLStore) GetUser(username string) (app.User, error) {
-	q := fmt.Sprintf(`SELECT id,username,display_name,password_hash,enabled,created_at FROM users WHERE username=%s`, s.placeholder(1))
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
+	q := `SELECT id,username,display_name,password_hash,enabled,created_at FROM users WHERE username=?`
+	if s.dialect == postgresDialect {
+		q = `SELECT id,username,display_name,password_hash,enabled,created_at FROM users WHERE username=$1`
+	}
 	var user app.User
 	if err := s.db.QueryRow(q, username).Scan(&user.ID, &user.Username, &user.DisplayName, &user.PasswordHash, &user.Enabled, &user.CreatedAt); err != nil {
 		return app.User{}, err
@@ -268,7 +284,11 @@ func (s *SQLStore) GetUser(username string) (app.User, error) {
 }
 
 func (s *SQLStore) rolesForUser(userID int64) ([]string, error) {
-	q := fmt.Sprintf(`SELECT r.name FROM roles r INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = %s ORDER BY r.name`, s.placeholder(1))
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
+	q := `SELECT r.name FROM roles r INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ? ORDER BY r.name`
+	if s.dialect == postgresDialect {
+		q = `SELECT r.name FROM roles r INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = $1 ORDER BY r.name`
+	}
 	rows, err := s.db.Query(q, userID)
 	if err != nil {
 		return nil, err
@@ -312,6 +332,7 @@ func (s *SQLStore) CreateUser(username, displayName, password string, roles []st
 	if err != nil {
 		return app.User{}, err
 	}
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
 	q := fmt.Sprintf(`INSERT INTO users (username,display_name,password_hash,enabled,created_at) VALUES (%s,%s,%s,%s,%s)`, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5))
 	if _, err := s.db.Exec(q, username, displayName, string(hash), true, s.nowClock()); err != nil {
 		return app.User{}, err
@@ -361,6 +382,7 @@ func (s *SQLStore) CreateRole(role app.Role) (app.Role, error) {
 	if err != nil {
 		return app.Role{}, err
 	}
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
 	q := fmt.Sprintf(`INSERT INTO roles (name,description,permissions,created_at) VALUES (%s,%s,%s,%s)`, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4))
 	id, err := s.insertWithID(q, role.Name, role.Description, perms, role.CreatedAt)
 	if err != nil {

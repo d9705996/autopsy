@@ -6,12 +6,19 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 )
 
 const cookieName = "autopsy_session"
+
+var (
+	errMissingSession   = errors.New("missing session")
+	errInvalidSession   = errors.New("invalid session")
+	errInvalidSignature = errors.New("invalid signature")
+)
 
 type contextKey string
 
@@ -27,9 +34,6 @@ type Auth struct {
 }
 
 func New(secret string) *Auth {
-	if secret == "" {
-		secret = "autopsy-dev-secret"
-	}
 	return &Auth{secret: []byte(secret)}
 }
 
@@ -37,7 +41,14 @@ func (a *Auth) SetSession(w http.ResponseWriter, username string, roles []string
 	payload := username + "|" + strings.Join(roles, ",")
 	sig := a.sign(payload)
 	value := base64.StdEncoding.EncodeToString([]byte(payload + "|" + sig))
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: value, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Expires: time.Now().Add(12 * time.Hour)})
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Now().Add(12 * time.Hour),
+	})
 }
 
 func (a *Auth) ClearSession(w http.ResponseWriter) {
@@ -87,19 +98,19 @@ func hasPermission(roles []string, permission string) bool {
 func (a *Auth) UserFromRequest(r *http.Request) (SessionUser, error) {
 	c, err := r.Cookie(cookieName)
 	if err != nil || c.Value == "" {
-		return SessionUser{}, errors.New("missing session")
+		return SessionUser{}, errMissingSession
 	}
 	decoded, err := base64.StdEncoding.DecodeString(c.Value)
 	if err != nil {
-		return SessionUser{}, err
+		return SessionUser{}, fmt.Errorf("decode session cookie: %w", err)
 	}
 	parts := strings.Split(string(decoded), "|")
 	if len(parts) < 3 {
-		return SessionUser{}, errors.New("invalid session")
+		return SessionUser{}, errInvalidSession
 	}
 	payload := strings.Join(parts[:len(parts)-1], "|")
 	if a.sign(payload) != parts[len(parts)-1] {
-		return SessionUser{}, errors.New("invalid signature")
+		return SessionUser{}, errInvalidSignature
 	}
 	roles := []string{}
 	if parts[1] != "" {

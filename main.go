@@ -37,13 +37,24 @@ func main() {
 	}
 	defer repo.Close()
 
-	_ = repo.EnsureRole(app.Role{Name: "viewer", Description: "Read-only dashboard access", Permissions: []string{"read:dashboard"}})
+	_ = repo.EnsureRole(app.Role{
+		Name:        "viewer",
+		Description: "Read-only dashboard access",
+		Permissions: []string{"read:dashboard"},
+	})
 	if err = repo.EnsureAdminUser(adminUser, adminPassword); err != nil {
 		log.Fatalf("failed to create admin user: %v", err)
 	}
 
 	server := api.NewServer(repo, triage.NewHeuristicAgent(), auth.New(authSecret), webFS)
-	httpServer := &http.Server{Addr: addr, Handler: server.Router(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           server.Router(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	log.Printf("autopsy listening on %s using %s", addr, dbDriver)
 	if err := httpServer.ListenAndServe(); err != nil {
