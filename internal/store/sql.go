@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,6 +66,7 @@ func (s *SQLStore) migrate() error {
 			title TEXT NOT NULL,
 			description TEXT NOT NULL,
 			severity TEXT NOT NULL,
+			status TEXT NOT NULL,
 			labels TEXT,
 			payload TEXT,
 			triage TEXT,
@@ -103,6 +105,16 @@ func (s *SQLStore) migrate() error {
 			end_at TIMESTAMP NOT NULL,
 			escalation TEXT
 		);`,
+		`CREATE TABLE IF NOT EXISTS tools (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL,
+			server TEXT NOT NULL,
+			tool TEXT NOT NULL,
+			config TEXT,
+			created_at TIMESTAMP NOT NULL,
+			updated_at TIMESTAMP NOT NULL
+		);`,
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE,
@@ -138,11 +150,12 @@ func (s *SQLStore) migrate() error {
 	if s.dialect == postgresDialect {
 		// Keep compatibility with existing migration path by executing postgres specific DDL below.
 		stmts = []string{
-			`CREATE TABLE IF NOT EXISTS alerts (id BIGSERIAL PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,severity TEXT NOT NULL,labels TEXT,payload TEXT,triage TEXT,created_at TIMESTAMP NOT NULL);`,
+			`CREATE TABLE IF NOT EXISTS alerts (id BIGSERIAL PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,labels TEXT,payload TEXT,triage TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS incidents (id BIGSERIAL PRIMARY KEY,alert_id TEXT NOT NULL,title TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,status_page_url TEXT NOT NULL,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS postmortems (id BIGSERIAL PRIMARY KEY,incident_id TEXT NOT NULL,summary TEXT NOT NULL,timeline TEXT,learnings TEXT,actions TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS playbooks (id BIGSERIAL PRIMARY KEY,service TEXT NOT NULL,title TEXT NOT NULL,steps TEXT,last_updated TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS oncall_shifts (id BIGSERIAL PRIMARY KEY,engineer TEXT NOT NULL,primary_for TEXT NOT NULL,start_at TIMESTAMP NOT NULL,end_at TIMESTAMP NOT NULL,escalation TEXT);`,
+			`CREATE TABLE IF NOT EXISTS tools (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL,server TEXT NOT NULL,tool TEXT NOT NULL,config TEXT,created_at TIMESTAMP NOT NULL,updated_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY,username TEXT NOT NULL UNIQUE,display_name TEXT NOT NULL,password_hash TEXT NOT NULL,enabled BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS roles (id BIGSERIAL PRIMARY KEY,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL,permissions TEXT NOT NULL,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS user_roles (user_id BIGINT NOT NULL,role_id BIGINT NOT NULL,PRIMARY KEY (user_id, role_id));`,
@@ -154,6 +167,21 @@ func (s *SQLStore) migrate() error {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return err
 		}
+	}
+	if err := s.ensureAlertsStatusColumn(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLStore) ensureAlertsStatusColumn() error {
+	if s.dialect == postgresDialect {
+		_, err := s.db.Exec(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'received'`)
+		return err
+	}
+	_, err := s.db.Exec(`ALTER TABLE alerts ADD COLUMN status TEXT NOT NULL DEFAULT 'received'`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return err
 	}
 	return nil
 }
@@ -442,9 +470,12 @@ func (s *SQLStore) SaveAlert(a app.Alert) (app.Alert, error) {
 		return app.Alert{}, err
 	}
 
-	q := `INSERT INTO alerts (source,title,description,severity,labels,payload,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)`
-	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7))
-	id, err := s.insertWithID(q, a.Source, a.Title, a.Description, string(a.Severity), labelsJSON, payloadJSON, a.CreatedAt)
+	q := `INSERT INTO alerts (source,title,description,severity,status,labels,payload,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7), s.placeholder(8))
+	if a.Status == "" {
+		a.Status = "received"
+	}
+	id, err := s.insertWithID(q, a.Source, a.Title, a.Description, string(a.Severity), a.Status, labelsJSON, payloadJSON, a.CreatedAt)
 	if err != nil {
 		return app.Alert{}, err
 	}
@@ -458,14 +489,21 @@ func (s *SQLStore) UpdateAlertTriage(alertID string, triage app.TriageReport) er
 		return err
 	}
 
-	q := `UPDATE alerts SET triage=%s WHERE id=%s`
+	q := `UPDATE alerts SET triage=%s,status=%s WHERE id=%s`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3))
+	_, err = s.db.Exec(q, triageJSON, "triaged", parseNumericID(alertID))
+	return err
+}
+
+func (s *SQLStore) UpdateAlertStatus(alertID, status string) error {
+	q := `UPDATE alerts SET status=%s WHERE id=%s`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2))
-	_, err = s.db.Exec(q, triageJSON, parseNumericID(alertID))
+	_, err := s.db.Exec(q, status, parseNumericID(alertID))
 	return err
 }
 
 func (s *SQLStore) Alerts() ([]app.Alert, error) {
-	rows, err := s.db.Query(`SELECT id,source,title,description,severity,labels,payload,triage,created_at FROM alerts ORDER BY id DESC`)
+	rows, err := s.db.Query(`SELECT id,source,title,description,severity,status,labels,payload,triage,created_at FROM alerts ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -473,14 +511,15 @@ func (s *SQLStore) Alerts() ([]app.Alert, error) {
 	out := []app.Alert{}
 	for rows.Next() {
 		var id int64
-		var severity, labels, payload string
+		var severity, status, labels, payload string
 		var triage sql.NullString
 		var a app.Alert
-		if err := rows.Scan(&id, &a.Source, &a.Title, &a.Description, &severity, &labels, &payload, &triage, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&id, &a.Source, &a.Title, &a.Description, &severity, &status, &labels, &payload, &triage, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		a.ID = fmt.Sprintf("alt-%06d", id)
 		a.Severity = app.Severity(severity)
+		a.Status = status
 		_ = json.Unmarshal([]byte(labels), &a.Labels)
 		_ = json.Unmarshal([]byte(payload), &a.Payload)
 		if triage.Valid && triage.String != "" {
@@ -649,9 +688,96 @@ func (s *SQLStore) OnCall() ([]app.OnCallShift, error) {
 	return out, rows.Err()
 }
 
-func parseNumericID(prefixed string) int64 {
-	var prefix string
+func (s *SQLStore) CreateTool(tool app.MCPTool) (app.MCPTool, error) {
+	now := s.nowClock()
+	tool.CreatedAt = now
+	tool.UpdatedAt = now
+	configJSON, err := marshalJSON(tool.Config)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	q := `INSERT INTO tools (name,description,server,tool,config,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7))
+	id, err := s.insertWithID(q, tool.Name, tool.Description, tool.Server, tool.Tool, configJSON, tool.CreatedAt, tool.UpdatedAt)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	tool.ID = fmt.Sprintf("tool-%06d", id)
+	return tool, nil
+}
+
+func (s *SQLStore) Tools() ([]app.MCPTool, error) {
+	rows, err := s.db.Query(`SELECT id,name,description,server,tool,config,created_at,updated_at FROM tools ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []app.MCPTool
+	for rows.Next() {
+		var id int64
+		var config string
+		var tool app.MCPTool
+		if err := rows.Scan(&id, &tool.Name, &tool.Description, &tool.Server, &tool.Tool, &config, &tool.CreatedAt, &tool.UpdatedAt); err != nil {
+			return nil, err
+		}
+		tool.ID = fmt.Sprintf("tool-%06d", id)
+		_ = json.Unmarshal([]byte(config), &tool.Config)
+		out = append(out, tool)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLStore) Tool(toolID string) (app.MCPTool, error) {
+	q := `SELECT id,name,description,server,tool,config,created_at,updated_at FROM tools WHERE id=?`
+	if s.dialect == postgresDialect {
+		q = `SELECT id,name,description,server,tool,config,created_at,updated_at FROM tools WHERE id=$1`
+	}
 	var id int64
-	_, _ = fmt.Sscanf(prefixed, "%3s-%d", &prefix, &id)
+	var config string
+	var tool app.MCPTool
+	if err := s.db.QueryRow(q, parseNumericID(toolID)).Scan(&id, &tool.Name, &tool.Description, &tool.Server, &tool.Tool, &config, &tool.CreatedAt, &tool.UpdatedAt); err != nil {
+		return app.MCPTool{}, err
+	}
+	tool.ID = fmt.Sprintf("tool-%06d", id)
+	_ = json.Unmarshal([]byte(config), &tool.Config)
+	return tool, nil
+}
+
+func (s *SQLStore) UpdateTool(toolID string, tool app.MCPTool) (app.MCPTool, error) {
+	tool.UpdatedAt = s.nowClock()
+	configJSON, err := marshalJSON(tool.Config)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	q := `UPDATE tools SET name=%s,description=%s,server=%s,tool=%s,config=%s,updated_at=%s WHERE id=%s`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7))
+	if _, err = s.db.Exec(q, tool.Name, tool.Description, tool.Server, tool.Tool, configJSON, tool.UpdatedAt, parseNumericID(toolID)); err != nil {
+		return app.MCPTool{}, err
+	}
+	stored, err := s.Tool(toolID)
+	if err != nil {
+		return app.MCPTool{}, err
+	}
+	return stored, nil
+}
+
+func (s *SQLStore) DeleteTool(toolID string) error {
+	q := `DELETE FROM tools WHERE id=?`
+	if s.dialect == postgresDialect {
+		q = `DELETE FROM tools WHERE id=$1`
+	}
+	_, err := s.db.Exec(q, parseNumericID(toolID))
+	return err
+}
+
+func parseNumericID(prefixed string) int64 {
+	parts := strings.SplitN(prefixed, "-", 2)
+	if len(parts) != 2 {
+		return 0
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0
+	}
 	return id
 }

@@ -34,6 +34,8 @@ func (s *Server) Router() http.Handler {
 	protected.Handle("/api/postmortems", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handlePostMortems)))
 	protected.Handle("/api/playbooks", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handlePlaybooks)))
 	protected.Handle("/api/oncall", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handleOnCall)))
+	protected.Handle("/api/tools", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handleTools)))
+	protected.Handle("/api/tools/", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handleToolByID)))
 	protected.Handle("/api/me", http.HandlerFunc(s.handleMe))
 
 	protected.Handle("/api/admin/users", s.auth.RequirePermission("admin:users", http.HandlerFunc(s.handleAdminUsers)))
@@ -247,6 +249,9 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 	if alertRequest.Source == "" {
 		alertRequest.Source = "grafana"
 	}
+	if alertRequest.Status == "" {
+		alertRequest.Status = "received"
+	}
 
 	alert, err := s.store.SaveAlert(alertRequest)
 	if err != nil {
@@ -261,14 +266,15 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 	}
 
 	alert.Triage = &triageReport
-	if alert.Severity != app.SeverityCritical {
+	alert.Status = "triaged"
+	if triageReport.Decision != "start_incident" {
 		writeJSON(writer, http.StatusCreated, map[string]any{"alert": alert})
 		return
 	}
 
 	incident, err := s.store.CreateIncident(app.Incident{
 		AlertID:       alert.ID,
-		Title:         "Auto-created incident for critical alert: " + alert.Title,
+		Title:         "Auto-created incident for triaged alert: " + alert.Title,
 		Severity:      alert.Severity,
 		Status:        "investigating",
 		StatusPageURL: "/status/" + alert.ID,
@@ -278,6 +284,11 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
+	if err = s.store.UpdateAlertStatus(alert.ID, "incident_open"); err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	alert.Status = "incident_open"
 	writeJSON(writer, http.StatusCreated, map[string]any{"alert": alert, "incident": incident})
 }
 
@@ -369,6 +380,69 @@ func (s *Server) handleOnCall(writer http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(writer, http.StatusCreated, created)
+	default:
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleTools(writer http.ResponseWriter, request *http.Request) {
+	switch request.Method {
+	case http.MethodGet:
+		items, err := s.store.Tools()
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(writer, http.StatusOK, items)
+	case http.MethodPost:
+		var payload app.MCPTool
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			http.Error(writer, "invalid json", http.StatusBadRequest)
+			return
+		}
+		created, err := s.store.CreateTool(payload)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, http.StatusCreated, created)
+	default:
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleToolByID(writer http.ResponseWriter, request *http.Request) {
+	toolID := strings.TrimPrefix(request.URL.Path, "/api/tools/")
+	if toolID == "" {
+		http.Error(writer, "tool id required", http.StatusBadRequest)
+		return
+	}
+	switch request.Method {
+	case http.MethodGet:
+		item, err := s.store.Tool(toolID)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeJSON(writer, http.StatusOK, item)
+	case http.MethodPut:
+		var payload app.MCPTool
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			http.Error(writer, "invalid json", http.StatusBadRequest)
+			return
+		}
+		updated, err := s.store.UpdateTool(toolID, payload)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, http.StatusOK, updated)
+	case http.MethodDelete:
+		if err := s.store.DeleteTool(toolID); err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
 		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
 	}
