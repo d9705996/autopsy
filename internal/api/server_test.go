@@ -252,3 +252,37 @@ func TestUnauthorizedWithoutLogin(t *testing.T) {
 		t.Fatalf("expected 401 got %d", res.StatusCode)
 	}
 }
+
+func TestPublicStatusPageReflectsActiveIncident(t *testing.T) {
+	ts := httptest.NewServer(setupServer(t).Router())
+	defer ts.Close()
+	c := newClient(ts)
+	login(t, c, ts.URL)
+
+	createAlert(t, c, ts.URL, map[string]any{
+		"title":       "checkout down",
+		"description": "customer checkout timeout spike",
+		"severity":    "critical",
+	})
+
+	res, err := http.Get(ts.URL + "/api/statuspage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 got %d", res.StatusCode)
+	}
+
+	var status map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status["overallStatus"] != "major_outage" {
+		t.Fatalf("expected major_outage got %#v", status["overallStatus"])
+	}
+	incidents, ok := status["incidents"].([]any)
+	if !ok || len(incidents) != 1 {
+		t.Fatalf("expected 1 public incident got %#v", status["incidents"])
+	}
+}

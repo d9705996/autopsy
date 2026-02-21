@@ -115,6 +115,26 @@ async function seedAutoFixAlert() {
   if (document.body.dataset.page === 'alerts') await loadAlertsPage();
 }
 
+
+async function loadPublicStatusPage() {
+  const data = await request('/api/statuspage');
+  document.getElementById('overall-status').textContent = data.overallStatus.replaceAll('_', ' ');
+  document.getElementById('status-updated').textContent = new Date(data.updatedAt).toLocaleString();
+  const host = document.getElementById('public-incidents');
+  host.innerHTML = data.incidents.map((inc) => `
+    <article class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div class="flex items-center justify-between gap-3">
+        <h3 class="text-lg font-semibold">${inc.title}</h3>
+        <span class="rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-300">${inc.status}</span>
+      </div>
+      <p class="mt-2 text-sm text-slate-300">${inc.currentMessage}</p>
+      <p class="mt-2 text-xs text-slate-500">Declared: ${new Date(inc.declaredAt).toLocaleString()} · Severity: ${inc.severity}</p>
+      <a class="mt-2 inline-block text-sm text-cyan-300 underline" href="${inc.statusPageUrl}">Status page link</a>
+      <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-300">${(inc.responsePlaybook || []).map((step) => `<li>${step}</li>`).join('')}</ul>
+    </article>
+  `).join('') || '<p class="text-slate-400">All systems operating normally.</p>';
+}
+
 async function loadDashboard() {
   const [alerts, incidents, tools] = await Promise.all([request('/api/alerts'), request('/api/incidents'), request('/api/tools')]);
   document.getElementById('kpi-alerts').textContent = alerts.length;
@@ -266,6 +286,12 @@ async function createInvite() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const page = document.body.dataset.page;
+  if (page === 'statuspage') {
+    await loadPublicStatusPage();
+    return;
+  }
+
   const root = document.getElementById('nav-root');
   if (root) root.innerHTML = navMarkup();
   await bootPage();

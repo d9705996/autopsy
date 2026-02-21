@@ -6,7 +6,7 @@ Autopsy is a Go-based incident response management platform inspired by Grafana 
 
 - Alert ingestion endpoint (`/api/alerts`) for Grafana webhooks today, extensible to any webhook source.
 - AI-assisted alert triage that adds context and likely root-cause hints.
-- Automatic incident creation and status-page URL generation for critical alerts.
+- Automatic incident creation and status-page URL generation for critical alerts, with public status updates whenever incidents are declared.
 - Postmortem and playbook management aligned with Google SRE handbook concepts:
   - SLO/error-budget aware triage guidance
   - standard incident lifecycle
@@ -43,6 +43,14 @@ go run .
 ```
 
 Open: <http://localhost:8080>
+Public status page: <http://localhost:8080/status>
+
+
+Quick local quality gate:
+
+```bash
+make check
+```
 
 ## API overview
 
@@ -51,6 +59,7 @@ Open: <http://localhost:8080>
 - `GET /api/me`
 - `GET|POST /api/alerts`
 - `GET /api/incidents`
+- `GET /api/statuspage` (public, no auth)
 - `GET|POST /api/postmortems`
 - `GET|POST /api/playbooks`
 - `GET|POST /api/oncall`
