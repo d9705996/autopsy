@@ -10,6 +10,8 @@ import (
 	"github.com/example/autopsy/internal/app"
 )
 
+const memoryServiceUnknown = "unknown"
+
 var (
 	errNotImplemented = errors.New("not implemented")
 	errToolNotFound   = errors.New("tool not found")
@@ -20,6 +22,7 @@ type MemoryStore struct {
 	counter   uint64
 	alerts    []app.Alert
 	incidents []app.Incident
+	services  []app.Service
 	tools     []app.MCPTool
 }
 
@@ -80,7 +83,26 @@ func (s *MemoryStore) CreateIncident(incident app.Incident) (app.Incident, error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	incident.ID = s.nextID("inc")
-	incident.CreatedAt = time.Now().UTC()
+	if incident.CreatedAt.IsZero() {
+		incident.CreatedAt = time.Now().UTC()
+	}
+	if incident.Service == "" {
+		incident.Service = memoryServiceUnknown
+	}
+	hasService := false
+	for _, svc := range s.services {
+		if svc.Name == incident.Service {
+			hasService = true
+			break
+		}
+	}
+	if !hasService {
+		s.services = append(s.services, app.Service{ID: s.nextID("svc"), Name: incident.Service, CreatedAt: time.Now().UTC()})
+	}
+	if incident.Status == "resolved" && incident.ResolvedAt == nil {
+		resolvedAt := time.Now().UTC()
+		incident.ResolvedAt = &resolvedAt
+	}
 	s.incidents = append(s.incidents, incident)
 	return incident, nil
 }
@@ -90,6 +112,34 @@ func (s *MemoryStore) Incidents() ([]app.Incident, error) {
 	defer s.mu.RUnlock()
 	out := make([]app.Incident, len(s.incidents))
 	copy(out, s.incidents)
+	return out, nil
+}
+
+func (s *MemoryStore) EnsureService(name string) (app.Service, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if name == "" {
+		name = memoryServiceUnknown
+	}
+	for _, svc := range s.services {
+		if svc.Name == name {
+			return svc, nil
+		}
+	}
+	svc := app.Service{
+		ID:        s.nextID("svc"),
+		Name:      name,
+		CreatedAt: time.Now().UTC(),
+	}
+	s.services = append(s.services, svc)
+	return svc, nil
+}
+
+func (s *MemoryStore) Services() ([]app.Service, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]app.Service, len(s.services))
+	copy(out, s.services)
 	return out, nil
 }
 

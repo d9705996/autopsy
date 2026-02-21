@@ -9,6 +9,8 @@ type Repository interface {
 	Alerts() ([]app.Alert, error)
 	CreateIncident(incident app.Incident) (app.Incident, error)
 	Incidents() ([]app.Incident, error)
+	EnsureService(name string) (app.Service, error)
+	Services() ([]app.Service, error)
 	AddPostMortem(pm app.PostMortem) (app.PostMortem, error)
 	PostMortems() ([]app.PostMortem, error)
 	AddPlaybook(pb app.Playbook) (app.Playbook, error)

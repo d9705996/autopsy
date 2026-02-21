@@ -52,6 +52,12 @@ Quick local quality gate:
 make check
 ```
 
+PR guard (recommended before committing feature work):
+
+```bash
+bash .codex/skills/autopsy-pr-guard/scripts/pre_pr_check.sh
+```
+
 ## API overview
 
 - `POST /api/login`
