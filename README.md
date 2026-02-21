@@ -50,4 +50,6 @@ Open: <http://localhost:8080>
 
 ## CI/CD
 
-GitHub Actions workflow runs formatting checks, linting, tests, and `gosec`, then builds Docker images and publishes to GHCR on non-PR events.
+GitHub Actions is split into dedicated workflows:
+- `lint-and-test`: runs formatting checks, tests, and `golangci-lint`.
+- `docker-release`: builds and pushes a GHCR image only when a git tag like `v1.2.3` is created; the Docker image tag matches `github.ref_name`.

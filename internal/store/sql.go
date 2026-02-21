@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/example/autopsy/internal/app"
-	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "modernc.org/sqlite"
 )
+
+const postgresDialect = "postgres"
 
 type SQLStore struct {
 	db       *sql.DB
@@ -29,7 +29,7 @@ func NewSQLStore(driver, dsn string) (*SQLStore, error) {
 	if driver == "sqlite" {
 		s.dialect = "sqlite"
 	} else {
-		s.dialect = "postgres"
+		s.dialect = postgresDialect
 	}
 	if err := s.migrate(); err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func NewSQLStore(driver, dsn string) (*SQLStore, error) {
 func (s *SQLStore) Close() error { return s.db.Close() }
 
 func (s *SQLStore) placeholder(n int) string {
-	if s.dialect == "postgres" {
+	if s.dialect == postgresDialect {
 		return fmt.Sprintf("$%d", n)
 	}
 	return "?"
@@ -48,7 +48,7 @@ func (s *SQLStore) placeholder(n int) string {
 
 func (s *SQLStore) migrate() error {
 	var stmts []string
-	if s.dialect == "postgres" {
+	if s.dialect == postgresDialect {
 		stmts = []string{
 			`CREATE TABLE IF NOT EXISTS alerts (
 				id BIGSERIAL PRIMARY KEY,
@@ -152,7 +152,7 @@ func (s *SQLStore) migrate() error {
 }
 
 func (s *SQLStore) insertWithID(baseInsert string, args ...any) (int64, error) {
-	if s.dialect == "postgres" {
+	if s.dialect == postgresDialect {
 		q := baseInsert + " RETURNING id"
 		var id int64
 		if err := s.db.QueryRow(q, args...).Scan(&id); err != nil {
@@ -167,16 +167,29 @@ func (s *SQLStore) insertWithID(baseInsert string, args ...any) (int64, error) {
 	return res.LastInsertId()
 }
 
-func toJSON(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
+func marshalJSON(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("marshal JSON: %w", err)
+	}
+
+	return string(b), nil
 }
 
 func (s *SQLStore) SaveAlert(a app.Alert) (app.Alert, error) {
 	a.CreatedAt = s.nowClock()
+	labelsJSON, err := marshalJSON(a.Labels)
+	if err != nil {
+		return app.Alert{}, err
+	}
+	payloadJSON, err := marshalJSON(a.Payload)
+	if err != nil {
+		return app.Alert{}, err
+	}
+
 	q := `INSERT INTO alerts (source,title,description,severity,labels,payload,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7))
-	id, err := s.insertWithID(q, a.Source, a.Title, a.Description, string(a.Severity), toJSON(a.Labels), toJSON(a.Payload), a.CreatedAt)
+	id, err := s.insertWithID(q, a.Source, a.Title, a.Description, string(a.Severity), labelsJSON, payloadJSON, a.CreatedAt)
 	if err != nil {
 		return app.Alert{}, err
 	}
@@ -185,9 +198,14 @@ func (s *SQLStore) SaveAlert(a app.Alert) (app.Alert, error) {
 }
 
 func (s *SQLStore) UpdateAlertTriage(alertID string, triage app.TriageReport) error {
+	triageJSON, err := marshalJSON(triage)
+	if err != nil {
+		return err
+	}
+
 	q := `UPDATE alerts SET triage=%s WHERE id=%s`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2))
-	_, err := s.db.Exec(q, toJSON(triage), parseNumericID(alertID))
+	_, err = s.db.Exec(q, triageJSON, parseNumericID(alertID))
 	return err
 }
 
@@ -255,9 +273,22 @@ func (s *SQLStore) Incidents() ([]app.Incident, error) {
 
 func (s *SQLStore) AddPostMortem(pm app.PostMortem) (app.PostMortem, error) {
 	pm.CreatedAt = s.nowClock()
+	timelineJSON, err := marshalJSON(pm.Timeline)
+	if err != nil {
+		return app.PostMortem{}, err
+	}
+	learningsJSON, err := marshalJSON(pm.Learnings)
+	if err != nil {
+		return app.PostMortem{}, err
+	}
+	actionsJSON, err := marshalJSON(pm.Actions)
+	if err != nil {
+		return app.PostMortem{}, err
+	}
+
 	q := `INSERT INTO postmortems (incident_id,summary,timeline,learnings,actions,created_at) VALUES (%s,%s,%s,%s,%s,%s)`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6))
-	id, err := s.insertWithID(q, pm.IncidentID, pm.Summary, toJSON(pm.Timeline), toJSON(pm.Learnings), toJSON(pm.Actions), pm.CreatedAt)
+	id, err := s.insertWithID(q, pm.IncidentID, pm.Summary, timelineJSON, learningsJSON, actionsJSON, pm.CreatedAt)
 	if err != nil {
 		return app.PostMortem{}, err
 	}
@@ -290,9 +321,14 @@ func (s *SQLStore) PostMortems() ([]app.PostMortem, error) {
 
 func (s *SQLStore) AddPlaybook(pb app.Playbook) (app.Playbook, error) {
 	pb.LastUpdated = s.nowClock()
+	stepsJSON, err := marshalJSON(pb.Steps)
+	if err != nil {
+		return app.Playbook{}, err
+	}
+
 	q := `INSERT INTO playbooks (service,title,steps,last_updated) VALUES (%s,%s,%s,%s)`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4))
-	id, err := s.insertWithID(q, pb.Service, pb.Title, toJSON(pb.Steps), pb.LastUpdated)
+	id, err := s.insertWithID(q, pb.Service, pb.Title, stepsJSON, pb.LastUpdated)
 	if err != nil {
 		return app.Playbook{}, err
 	}
@@ -322,9 +358,14 @@ func (s *SQLStore) Playbooks() ([]app.Playbook, error) {
 }
 
 func (s *SQLStore) AddShift(shift app.OnCallShift) (app.OnCallShift, error) {
+	escalationJSON, err := marshalJSON(shift.Escalation)
+	if err != nil {
+		return app.OnCallShift{}, err
+	}
+
 	q := `INSERT INTO oncall_shifts (engineer,primary_for,start_at,end_at,escalation) VALUES (%s,%s,%s,%s,%s)`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5))
-	id, err := s.insertWithID(q, shift.Engineer, shift.PrimaryFor, shift.Start, shift.End, toJSON(shift.Escalation))
+	id, err := s.insertWithID(q, shift.Engineer, shift.PrimaryFor, shift.Start, shift.End, escalationJSON)
 	if err != nil {
 		return app.OnCallShift{}, err
 	}

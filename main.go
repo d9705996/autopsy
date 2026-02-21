@@ -5,11 +5,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/example/autopsy/internal/api"
 	"github.com/example/autopsy/internal/auth"
 	"github.com/example/autopsy/internal/store"
 	"github.com/example/autopsy/internal/triage"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed web/*
@@ -33,8 +36,17 @@ func main() {
 	defer repo.Close()
 
 	server := api.NewServer(repo, triage.NewHeuristicAgent(), auth.New(adminUser, adminPassword), webFS)
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           server.Router(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
 	log.Printf("autopsy listening on %s using %s", addr, dbDriver)
-	if err := http.ListenAndServe(addr, server.Router()); err != nil {
+	if err := httpServer.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/example/autopsy/internal/auth"
 	"github.com/example/autopsy/internal/store"
 	"github.com/example/autopsy/internal/triage"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed testdata/*
