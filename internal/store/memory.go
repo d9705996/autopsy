@@ -10,6 +10,8 @@ import (
 	"github.com/example/autopsy/internal/app"
 )
 
+const memoryServiceUnknown = "unknown"
+
 var (
 	errNotImplemented = errors.New("not implemented")
 	errToolNotFound   = errors.New("tool not found")
@@ -85,7 +87,7 @@ func (s *MemoryStore) CreateIncident(incident app.Incident) (app.Incident, error
 		incident.CreatedAt = time.Now().UTC()
 	}
 	if incident.Service == "" {
-		incident.Service = "unknown"
+		incident.Service = memoryServiceUnknown
 	}
 	hasService := false
 	for _, svc := range s.services {
@@ -117,7 +119,7 @@ func (s *MemoryStore) EnsureService(name string) (app.Service, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if name == "" {
-		name = "unknown"
+		name = memoryServiceUnknown
 	}
 	for _, svc := range s.services {
 		if svc.Name == name {

@@ -3,6 +3,7 @@ package api
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -13,6 +14,14 @@ import (
 	"github.com/example/autopsy/internal/auth"
 	"github.com/example/autopsy/internal/store"
 	"github.com/example/autopsy/internal/triage"
+)
+
+const (
+	defaultPeriodHours = 24
+	maxPeriodHours     = 24 * 30
+	statusOperational  = "operational"
+	serviceUnknown     = "unknown"
+	availabilityMaxPct = 100.0
 )
 
 type Server struct {
@@ -73,17 +82,10 @@ func (s *Server) handlePublicStatusPage(writer http.ResponseWriter, request *htt
 	}
 
 	now := time.Now().UTC()
-	periodHours := 24
-	if raw := request.URL.Query().Get("periodHours"); raw != "" {
-		parsed, parseErr := strconv.Atoi(raw)
-		if parseErr == nil && parsed > 0 && parsed <= 24*30 {
-			periodHours = parsed
-		}
-	}
-	periodStart := now.Add(-time.Duration(periodHours) * time.Hour)
+	periodStart := statusPeriodStart(request, now)
 
 	status := app.PublicStatusPage{
-		OverallStatus: "operational",
+		OverallStatus: statusOperational,
 		UpdatedAt:     now,
 		PeriodStart:   periodStart,
 		PeriodEnd:     now,
@@ -95,26 +97,11 @@ func (s *Server) handlePublicStatusPage(writer http.ResponseWriter, request *htt
 		if incident.Status != "investigating" && incident.Status != "identified" {
 			continue
 		}
-		status.Incidents = append(status.Incidents, app.StatusPageIncident{
-			ID:             incident.ID,
-			Service:        incident.Service,
-			Title:          incident.Title,
-			Severity:       incident.Severity,
-			Status:         incident.Status,
-			DeclaredAt:     incident.CreatedAt,
-			StatusPageURL:  incident.StatusPageURL,
-			CurrentMessage: "Incident declared. Command role assigned, communications started, mitigation in progress.",
-			ResponsePlaybook: []string{
-				"Assign incident commander and define communication cadence",
-				"Assess customer impact against SLOs and error budget policy",
-				"Stabilize service and execute mitigation plan",
-				"Capture timeline and prepare blameless postmortem",
-			},
-		})
+		status.Incidents = append(status.Incidents, statusPageIncidentFrom(incident))
 
 		if incident.Severity == app.SeverityCritical {
 			status.OverallStatus = "major_outage"
-		} else if status.OverallStatus == "operational" {
+		} else if status.OverallStatus == statusOperational {
 			status.OverallStatus = "degraded_performance"
 		}
 	}
@@ -346,24 +333,7 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	service := "unknown"
-	if alert.Labels != nil && alert.Labels["service"] != "" {
-		service = alert.Labels["service"]
-	}
-
-	if _, err = s.store.EnsureService(service); err != nil {
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	incident, err := s.store.CreateIncident(app.Incident{
-		AlertID:       alert.ID,
-		Service:       service,
-		Title:         "Auto-created incident for triaged alert: " + alert.Title,
-		Severity:      alert.Severity,
-		Status:        "investigating",
-		StatusPageURL: "/status/" + alert.ID,
-	})
+	incident, err := s.createIncidentFromAlert(alert)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -533,7 +503,89 @@ func (s *Server) handleToolByID(writer http.ResponseWriter, request *http.Reques
 	}
 }
 
-func buildServiceAvailability(services []app.Service, incidents []app.Incident, periodStart, periodEnd time.Time) []app.ServiceAvailability {
+func statusPeriodStart(request *http.Request, now time.Time) time.Time {
+	periodHours := defaultPeriodHours
+	if raw := request.URL.Query().Get("periodHours"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr == nil && parsed > 0 && parsed <= maxPeriodHours {
+			periodHours = parsed
+		}
+	}
+	return now.Add(-time.Duration(periodHours) * time.Hour)
+}
+
+func statusPageIncidentFrom(incident app.Incident) app.StatusPageIncident {
+	return app.StatusPageIncident{
+		ID:             incident.ID,
+		Service:        incident.Service,
+		Title:          incident.Title,
+		Severity:       incident.Severity,
+		Status:         incident.Status,
+		DeclaredAt:     incident.CreatedAt,
+		StatusPageURL:  incident.StatusPageURL,
+		CurrentMessage: "Incident declared. Command role assigned, communications started, mitigation in progress.",
+		ResponsePlaybook: []string{
+			"Assign incident commander and define communication cadence",
+			"Assess customer impact against SLOs and error budget policy",
+			"Stabilize service and execute mitigation plan",
+			"Capture timeline and prepare blameless postmortem",
+		},
+	}
+}
+
+func serviceFromAlert(alert app.Alert) string {
+	if alert.Labels != nil && alert.Labels["service"] != "" {
+		return alert.Labels["service"]
+	}
+	return serviceUnknown
+}
+
+func (s *Server) createIncidentFromAlert(alert app.Alert) (app.Incident, error) {
+	service := serviceFromAlert(alert)
+	if _, err := s.store.EnsureService(service); err != nil {
+		return app.Incident{}, fmt.Errorf("ensure service: %w", err)
+	}
+	incident, err := s.store.CreateIncident(app.Incident{
+		AlertID:       alert.ID,
+		Service:       service,
+		Title:         "Auto-created incident for triaged alert: " + alert.Title,
+		Severity:      alert.Severity,
+		Status:        "investigating",
+		StatusPageURL: "/status/" + alert.ID,
+	})
+	if err != nil {
+		return app.Incident{}, fmt.Errorf("create incident: %w", err)
+	}
+	return incident, nil
+}
+
+func boundedIncidentDowntime(incident app.Incident, periodStart, periodEnd time.Time) time.Duration {
+	incidentEnd := periodEnd
+	if incident.ResolvedAt != nil {
+		incidentEnd = *incident.ResolvedAt
+	}
+	if incidentEnd.Before(periodStart) || incident.CreatedAt.After(periodEnd) || incident.CreatedAt.After(incidentEnd) {
+		return 0
+	}
+	start := incident.CreatedAt
+	if start.Before(periodStart) {
+		start = periodStart
+	}
+	end := incidentEnd
+	if end.After(periodEnd) {
+		end = periodEnd
+	}
+	if !end.After(start) {
+		return 0
+	}
+	return end.Sub(start)
+}
+
+func buildServiceAvailability(
+	services []app.Service,
+	incidents []app.Incident,
+	periodStart, periodEnd time.Time,
+) []app.ServiceAvailability {
 	serviceDowntime := map[string]time.Duration{}
 	for _, service := range services {
 		name := service.Name
@@ -550,34 +602,13 @@ func buildServiceAvailability(services []app.Service, incidents []app.Incident, 
 	for _, incident := range incidents {
 		service := incident.Service
 		if service == "" {
-			service = "unknown"
+			service = serviceUnknown
 		}
 		if _, ok := serviceDowntime[service]; !ok {
 			serviceDowntime[service] = 0
 		}
 
-		incidentEnd := periodEnd
-		if incident.ResolvedAt != nil {
-			incidentEnd = *incident.ResolvedAt
-		}
-		if incidentEnd.Before(periodStart) || incident.CreatedAt.After(periodEnd) {
-			continue
-		}
-		if incident.CreatedAt.After(incidentEnd) {
-			continue
-		}
-
-		start := incident.CreatedAt
-		if start.Before(periodStart) {
-			start = periodStart
-		}
-		end := incidentEnd
-		if end.After(periodEnd) {
-			end = periodEnd
-		}
-		if end.After(start) {
-			serviceDowntime[service] += end.Sub(start)
-		}
+		serviceDowntime[service] += boundedIncidentDowntime(incident, periodStart, periodEnd)
 	}
 
 	serviceNames := make([]string, 0, len(serviceDowntime))
@@ -592,7 +623,7 @@ func buildServiceAvailability(services []app.Service, incidents []app.Incident, 
 		if downtime < 0 {
 			downtime = 0
 		}
-		availability := 100 - (float64(downtime)/float64(periodDuration))*100
+		availability := availabilityMaxPct - (float64(downtime)/float64(periodDuration))*availabilityMaxPct
 		if availability < 0 {
 			availability = 0
 		}

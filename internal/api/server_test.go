@@ -301,6 +301,7 @@ func TestPublicStatusPageReturnsServiceAvailabilityForPeriod(t *testing.T) {
 	start := now.Add(-2 * time.Hour)
 	resolved := now.Add(-1 * time.Hour)
 	if _, err := repo.CreateIncident(app.Incident{
+		ID:            "",
 		AlertID:       "alt-1",
 		Service:       "payments",
 		Title:         "payments latency",
@@ -333,7 +334,10 @@ func TestPublicStatusPageReturnsServiceAvailabilityForPeriod(t *testing.T) {
 	if !ok || len(services) != 1 {
 		t.Fatalf("expected 1 service availability entry got %#v", status["services"])
 	}
-	service := services[0].(map[string]any)
+	service, ok := services[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected service map got %#v", services[0])
+	}
 	if service["service"] != "payments" {
 		t.Fatalf("expected payments service got %#v", service["service"])
 	}
@@ -372,11 +376,18 @@ func TestPublicStatusPageIncludesServicesWithoutIncidents(t *testing.T) {
 	if !ok || len(services) != 1 {
 		t.Fatalf("expected 1 service availability entry got %#v", status["services"])
 	}
-	svc := services[0].(map[string]any)
+	svc, ok := services[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected service map got %#v", services[0])
+	}
 	if svc["service"] != "search" {
 		t.Fatalf("expected search service got %#v", svc["service"])
 	}
-	if svc["availabilityPercent"].(float64) != 100 {
+	availability, ok := svc["availabilityPercent"].(float64)
+	if !ok {
+		t.Fatalf("expected numeric availability got %#v", svc["availabilityPercent"])
+	}
+	if availability != 100 {
 		t.Fatalf("expected 100 availability got %#v", svc["availabilityPercent"])
 	}
 }
