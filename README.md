@@ -12,7 +12,9 @@ Autopsy is a Go-based incident response management platform inspired by Grafana 
   - standard incident lifecycle
   - learning-focused follow-up records
 - On-call scheduling with escalation paths.
-- Session-based login for authenticated API usage.
+- Local user authentication with seeded admin account on startup.
+- Role-based access control (RBAC) with extensible roles and permission lists.
+- Admin panel for user/role/invite management.
 - Persistent storage with configurable database backend:
   - SQLite for local development
   - PostgreSQL for multi-instance/runtime deployments
@@ -23,11 +25,14 @@ Autopsy is a Go-based incident response management platform inspired by Grafana 
 go run .
 ```
 
-Default credentials: `admin/admin` (override with `AUTOPSY_ADMIN_USER` and `AUTOPSY_ADMIN_PASSWORD`).
+Default credentials: `admin/admin`.
 
-Database defaults:
-- `AUTOPSY_DB_DRIVER=sqlite`
-- `AUTOPSY_DB_DSN=file:autopsy.db?_pragma=busy_timeout(5000)`
+Environment variables:
+- `AUTOPSY_ADMIN_USER` (default: `admin`)
+- `AUTOPSY_ADMIN_PASSWORD` (default: `admin`)
+- `AUTOPSY_AUTH_SECRET` (default: `autopsy-dev-secret`)
+- `AUTOPSY_DB_DRIVER` (default: `sqlite`)
+- `AUTOPSY_DB_DSN` (default: `file:autopsy.db?_pragma=busy_timeout(5000)`)
 
 Use PostgreSQL:
 
@@ -42,11 +47,16 @@ Open: <http://localhost:8080>
 ## API overview
 
 - `POST /api/login`
+- `POST /api/logout`
+- `GET /api/me`
 - `GET|POST /api/alerts`
 - `GET /api/incidents`
 - `GET|POST /api/postmortems`
 - `GET|POST /api/playbooks`
 - `GET|POST /api/oncall`
+- `GET|POST /api/admin/users`
+- `GET|POST /api/admin/roles`
+- `GET|POST /api/admin/invites`
 
 ## CI/CD
 

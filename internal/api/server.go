@@ -26,13 +26,19 @@ func NewServer(st store.Repository, agent triage.Agent, authn *auth.Auth, ui emb
 func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/login", s.handleLogin)
+	mux.HandleFunc("/api/logout", s.handleLogout)
 
 	protected := http.NewServeMux()
-	protected.HandleFunc("/api/alerts", s.handleAlerts)
-	protected.HandleFunc("/api/incidents", s.handleIncidents)
-	protected.HandleFunc("/api/postmortems", s.handlePostMortems)
-	protected.HandleFunc("/api/playbooks", s.handlePlaybooks)
-	protected.HandleFunc("/api/oncall", s.handleOnCall)
+	protected.Handle("/api/alerts", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handleAlerts)))
+	protected.Handle("/api/incidents", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handleIncidents)))
+	protected.Handle("/api/postmortems", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handlePostMortems)))
+	protected.Handle("/api/playbooks", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handlePlaybooks)))
+	protected.Handle("/api/oncall", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handleOnCall)))
+	protected.Handle("/api/me", http.HandlerFunc(s.handleMe))
+
+	protected.Handle("/api/admin/users", s.auth.RequirePermission("admin:users", http.HandlerFunc(s.handleAdminUsers)))
+	protected.Handle("/api/admin/roles", s.auth.RequirePermission("admin:roles", http.HandlerFunc(s.handleAdminRoles)))
+	protected.Handle("/api/admin/invites", s.auth.RequirePermission("admin:invites", http.HandlerFunc(s.handleAdminInvites)))
 
 	mux.Handle("/api/", s.auth.Middleware(protected))
 	mux.HandleFunc("/", s.handleUI)
@@ -84,13 +90,127 @@ func (s *Server) handleLogin(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 
-	if !s.auth.Login(loginRequest.Username, loginRequest.Password) {
+	user, err := s.store.AuthenticateUser(loginRequest.Username, loginRequest.Password)
+	if err != nil {
 		http.Error(writer, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
-	s.auth.SetSession(writer, loginRequest.Username)
+	s.auth.SetSession(writer, user.Username, user.Roles)
+	writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "authMode": "local", "ssoEnabled": false, "user": user})
+}
+
+func (s *Server) handleLogout(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.auth.ClearSession(writer)
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleMe(writer http.ResponseWriter, request *http.Request) {
+	session, ok := auth.UserFromContext(request.Context())
+	if !ok {
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	user, err := s.store.GetUser(session.Username)
+	if err != nil {
+		http.Error(writer, "user not found", http.StatusUnauthorized)
+		return
+	}
+	user.PasswordHash = ""
+	writeJSON(writer, http.StatusOK, user)
+}
+
+func (s *Server) handleAdminUsers(writer http.ResponseWriter, request *http.Request) {
+	switch request.Method {
+	case http.MethodGet:
+		users, err := s.store.ListUsers()
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(writer, http.StatusOK, users)
+	case http.MethodPost:
+		var payload struct {
+			Username    string   `json:"username"`
+			DisplayName string   `json:"displayName"`
+			Password    string   `json:"password"`
+			Roles       []string `json:"roles"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			http.Error(writer, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if payload.DisplayName == "" {
+			payload.DisplayName = payload.Username
+		}
+		created, err := s.store.CreateUser(payload.Username, payload.DisplayName, payload.Password, payload.Roles)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, http.StatusCreated, created)
+	default:
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminRoles(writer http.ResponseWriter, request *http.Request) {
+	switch request.Method {
+	case http.MethodGet:
+		roles, err := s.store.ListRoles()
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(writer, http.StatusOK, roles)
+	case http.MethodPost:
+		var payload app.Role
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			http.Error(writer, "invalid json", http.StatusBadRequest)
+			return
+		}
+		created, err := s.store.CreateRole(payload)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, http.StatusCreated, created)
+	default:
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminInvites(writer http.ResponseWriter, request *http.Request) {
+	switch request.Method {
+	case http.MethodGet:
+		invites, err := s.store.ListInvites()
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(writer, http.StatusOK, invites)
+	case http.MethodPost:
+		var payload struct {
+			Email string `json:"email"`
+			Role  string `json:"role"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			http.Error(writer, "invalid json", http.StatusBadRequest)
+			return
+		}
+		invite, err := s.store.CreateInvite(payload.Email, payload.Role)
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(writer, http.StatusCreated, invite)
+	default:
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleAlerts(writer http.ResponseWriter, request *http.Request) {
@@ -138,13 +258,7 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
-	incident, err := s.store.CreateIncident(app.Incident{
-		AlertID:       alert.ID,
-		Title:         "Auto-created incident for critical alert: " + alert.Title,
-		Severity:      alert.Severity,
-		Status:        "investigating",
-		StatusPageURL: "/status/" + alert.ID,
-	})
+	incident, err := s.store.CreateIncident(app.Incident{AlertID: alert.ID, Title: "Auto-created incident for critical alert: " + alert.Title, Severity: alert.Severity, Status: "investigating", StatusPageURL: "/status/" + alert.ID})
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
