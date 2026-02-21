@@ -5,6 +5,7 @@ import "github.com/example/autopsy/internal/app"
 type Repository interface {
 	SaveAlert(a app.Alert) (app.Alert, error)
 	UpdateAlertTriage(alertID string, triage app.TriageReport) error
+	UpdateAlertStatus(alertID, status string) error
 	Alerts() ([]app.Alert, error)
 	CreateIncident(incident app.Incident) (app.Incident, error)
 	Incidents() ([]app.Incident, error)

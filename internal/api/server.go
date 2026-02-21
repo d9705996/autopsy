@@ -247,6 +247,9 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 	if alertRequest.Source == "" {
 		alertRequest.Source = "grafana"
 	}
+	if alertRequest.Status == "" {
+		alertRequest.Status = "received"
+	}
 
 	alert, err := s.store.SaveAlert(alertRequest)
 	if err != nil {
@@ -261,14 +264,15 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 	}
 
 	alert.Triage = &triageReport
-	if alert.Severity != app.SeverityCritical {
+	alert.Status = "triaged"
+	if triageReport.Decision != "start_incident" {
 		writeJSON(writer, http.StatusCreated, map[string]any{"alert": alert})
 		return
 	}
 
 	incident, err := s.store.CreateIncident(app.Incident{
 		AlertID:       alert.ID,
-		Title:         "Auto-created incident for critical alert: " + alert.Title,
+		Title:         "Auto-created incident for triaged alert: " + alert.Title,
 		Severity:      alert.Severity,
 		Status:        "investigating",
 		StatusPageURL: "/status/" + alert.ID,
@@ -278,6 +282,11 @@ func (s *Server) handleCreateAlert(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
+	if err = s.store.UpdateAlertStatus(alert.ID, "incident_open"); err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	alert.Status = "incident_open"
 	writeJSON(writer, http.StatusCreated, map[string]any{"alert": alert, "incident": incident})
 }
 

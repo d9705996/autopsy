@@ -65,6 +65,7 @@ func (s *SQLStore) migrate() error {
 			title TEXT NOT NULL,
 			description TEXT NOT NULL,
 			severity TEXT NOT NULL,
+			status TEXT NOT NULL,
 			labels TEXT,
 			payload TEXT,
 			triage TEXT,
@@ -138,7 +139,7 @@ func (s *SQLStore) migrate() error {
 	if s.dialect == postgresDialect {
 		// Keep compatibility with existing migration path by executing postgres specific DDL below.
 		stmts = []string{
-			`CREATE TABLE IF NOT EXISTS alerts (id BIGSERIAL PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,severity TEXT NOT NULL,labels TEXT,payload TEXT,triage TEXT,created_at TIMESTAMP NOT NULL);`,
+			`CREATE TABLE IF NOT EXISTS alerts (id BIGSERIAL PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,labels TEXT,payload TEXT,triage TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS incidents (id BIGSERIAL PRIMARY KEY,alert_id TEXT NOT NULL,title TEXT NOT NULL,severity TEXT NOT NULL,status TEXT NOT NULL,status_page_url TEXT NOT NULL,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS postmortems (id BIGSERIAL PRIMARY KEY,incident_id TEXT NOT NULL,summary TEXT NOT NULL,timeline TEXT,learnings TEXT,actions TEXT,created_at TIMESTAMP NOT NULL);`,
 			`CREATE TABLE IF NOT EXISTS playbooks (id BIGSERIAL PRIMARY KEY,service TEXT NOT NULL,title TEXT NOT NULL,steps TEXT,last_updated TIMESTAMP NOT NULL);`,
@@ -154,6 +155,21 @@ func (s *SQLStore) migrate() error {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return err
 		}
+	}
+	if err := s.ensureAlertsStatusColumn(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SQLStore) ensureAlertsStatusColumn() error {
+	if s.dialect == postgresDialect {
+		_, err := s.db.Exec(`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'received'`)
+		return err
+	}
+	_, err := s.db.Exec(`ALTER TABLE alerts ADD COLUMN status TEXT NOT NULL DEFAULT 'received'`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return err
 	}
 	return nil
 }
@@ -442,9 +458,12 @@ func (s *SQLStore) SaveAlert(a app.Alert) (app.Alert, error) {
 		return app.Alert{}, err
 	}
 
-	q := `INSERT INTO alerts (source,title,description,severity,labels,payload,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)`
-	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7))
-	id, err := s.insertWithID(q, a.Source, a.Title, a.Description, string(a.Severity), labelsJSON, payloadJSON, a.CreatedAt)
+	q := `INSERT INTO alerts (source,title,description,severity,status,labels,payload,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4), s.placeholder(5), s.placeholder(6), s.placeholder(7), s.placeholder(8))
+	if a.Status == "" {
+		a.Status = "received"
+	}
+	id, err := s.insertWithID(q, a.Source, a.Title, a.Description, string(a.Severity), a.Status, labelsJSON, payloadJSON, a.CreatedAt)
 	if err != nil {
 		return app.Alert{}, err
 	}
@@ -458,14 +477,21 @@ func (s *SQLStore) UpdateAlertTriage(alertID string, triage app.TriageReport) er
 		return err
 	}
 
-	q := `UPDATE alerts SET triage=%s WHERE id=%s`
+	q := `UPDATE alerts SET triage=%s,status=%s WHERE id=%s`
+	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2), s.placeholder(3))
+	_, err = s.db.Exec(q, triageJSON, "triaged", parseNumericID(alertID))
+	return err
+}
+
+func (s *SQLStore) UpdateAlertStatus(alertID, status string) error {
+	q := `UPDATE alerts SET status=%s WHERE id=%s`
 	q = fmt.Sprintf(q, s.placeholder(1), s.placeholder(2))
-	_, err = s.db.Exec(q, triageJSON, parseNumericID(alertID))
+	_, err := s.db.Exec(q, status, parseNumericID(alertID))
 	return err
 }
 
 func (s *SQLStore) Alerts() ([]app.Alert, error) {
-	rows, err := s.db.Query(`SELECT id,source,title,description,severity,labels,payload,triage,created_at FROM alerts ORDER BY id DESC`)
+	rows, err := s.db.Query(`SELECT id,source,title,description,severity,status,labels,payload,triage,created_at FROM alerts ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -473,14 +499,15 @@ func (s *SQLStore) Alerts() ([]app.Alert, error) {
 	out := []app.Alert{}
 	for rows.Next() {
 		var id int64
-		var severity, labels, payload string
+		var severity, status, labels, payload string
 		var triage sql.NullString
 		var a app.Alert
-		if err := rows.Scan(&id, &a.Source, &a.Title, &a.Description, &severity, &labels, &payload, &triage, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&id, &a.Source, &a.Title, &a.Description, &severity, &status, &labels, &payload, &triage, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		a.ID = fmt.Sprintf("alt-%06d", id)
 		a.Severity = app.Severity(severity)
+		a.Status = status
 		_ = json.Unmarshal([]byte(labels), &a.Labels)
 		_ = json.Unmarshal([]byte(payload), &a.Payload)
 		if triage.Valid && triage.String != "" {

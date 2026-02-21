@@ -16,18 +16,29 @@ type Alert struct {
 	Title       string            `json:"title"`
 	Description string            `json:"description"`
 	Severity    Severity          `json:"severity"`
+	Status      string            `json:"status"`
 	Labels      map[string]string `json:"labels"`
 	Payload     map[string]any    `json:"payload"`
 	CreatedAt   time.Time         `json:"createdAt"`
 	Triage      *TriageReport     `json:"triage,omitempty"`
 }
 
+type TriageTimelineStep struct {
+	Phase     string    `json:"phase"`
+	Detail    string    `json:"detail"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 type TriageReport struct {
-	Summary          string    `json:"summary"`
-	LikelyRootCause  string    `json:"likelyRootCause"`
-	SuggestedActions []string  `json:"suggestedActions"`
-	Confidence       string    `json:"confidence"`
-	ReviewedAt       time.Time `json:"reviewedAt"`
+	Summary          string               `json:"summary"`
+	LikelyRootCause  string               `json:"likelyRootCause"`
+	SuggestedActions []string             `json:"suggestedActions"`
+	Decision         string               `json:"decision"`
+	IssueTitle       string               `json:"issueTitle,omitempty"`
+	AutoFixPlan      []string             `json:"autoFixPlan,omitempty"`
+	Timeline         []TriageTimelineStep `json:"timeline"`
+	Confidence       string               `json:"confidence"`
+	ReviewedAt       time.Time            `json:"reviewedAt"`
 }
 
 type Incident struct {

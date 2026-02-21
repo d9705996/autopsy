@@ -1,65 +1,98 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Autopsy IRM</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
   </head>
-  <body>
-    <main>
-      <h1>Autopsy IRM</h1>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <main class="mx-auto max-w-7xl px-6 py-8">
+      <header class="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/40">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <div class="rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 p-3">
+              <svg class="h-8 w-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M4 19h16M6 17l2-9h8l2 9M9 8a3 3 0 0 1 6 0" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div>
+              <h1 class="text-2xl font-semibold tracking-tight">Autopsy Incident Response</h1>
+              <p class="text-sm text-slate-400">Enterprise alert triage, incident decisioning, and operational timelines.</p>
+            </div>
+          </div>
+          <span class="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">AI Triage Console</span>
+        </div>
+      </header>
 
-      <section id="login" class="card">
-        <h2>Login</h2>
-        <p>Local auth for now. SSO can be enabled later.</p>
-        <input id="u" placeholder="username" value="admin" />
-        <input id="p" placeholder="password" type="password" />
-        <button onclick="login()">Login</button>
+      <section id="login" class="mx-auto max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl shadow-slate-950/50">
+        <h2 class="mb-1 text-xl font-semibold">Sign in</h2>
+        <p class="mb-5 text-sm text-slate-400">Use local credentials to access the IRM dashboard.</p>
+        <div class="space-y-3">
+          <input id="u" placeholder="username" value="admin" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2" />
+          <input id="p" placeholder="password" type="password" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2" />
+          <button onclick="login()" class="w-full rounded-lg bg-blue-600 px-3 py-2 font-medium hover:bg-blue-500">Login</button>
+        </div>
       </section>
 
-      <section id="dashboard" class="hidden">
-        <div class="row">
-          <h2>Dashboard</h2>
-          <button onclick="logout()">Logout</button>
+      <section id="dashboard" class="hidden space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+          <p id="whoami" class="text-sm text-slate-300"></p>
+          <button onclick="logout()" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Logout</button>
         </div>
-        <p id="whoami"></p>
 
-        <div id="admin-panel" class="card hidden">
-          <h3>Admin Panel</h3>
-          <div class="grid">
-            <div>
-              <h4>Users</h4>
-              <input id="new-username" placeholder="username" />
-              <input id="new-display" placeholder="display name" />
-              <input id="new-password" type="password" placeholder="temporary password" />
-              <input id="new-roles" placeholder="roles (comma separated)" value="viewer" />
-              <button onclick="createUser()">Create User</button>
-              <pre id="users-out"></pre>
+        <div id="admin-panel" class="hidden rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <h3 class="mb-4 text-lg font-semibold">Admin controls</h3>
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="rounded-xl border border-slate-800 bg-slate-950 p-4">
+              <h4 class="mb-2 font-medium">Users</h4>
+              <input id="new-username" placeholder="username" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <input id="new-display" placeholder="display name" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <input id="new-password" type="password" placeholder="temporary password" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <input id="new-roles" placeholder="roles (comma separated)" value="viewer" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <button onclick="createUser()" class="w-full rounded bg-blue-600 px-2 py-1.5 text-sm">Create User</button>
+              <pre id="users-out" class="mt-2 max-h-40 overflow-auto rounded border border-slate-800 bg-slate-900 p-2 text-xs"></pre>
             </div>
-            <div>
-              <h4>Roles</h4>
-              <input id="role-name" placeholder="role name" />
-              <input id="role-desc" placeholder="description" />
-              <input id="role-perms" placeholder="permissions (comma separated)" />
-              <button onclick="createRole()">Create Role</button>
-              <pre id="roles-out"></pre>
+            <div class="rounded-xl border border-slate-800 bg-slate-950 p-4">
+              <h4 class="mb-2 font-medium">Roles</h4>
+              <input id="role-name" placeholder="role name" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <input id="role-desc" placeholder="description" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <input id="role-perms" placeholder="permissions (comma separated)" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <button onclick="createRole()" class="w-full rounded bg-blue-600 px-2 py-1.5 text-sm">Create Role</button>
+              <pre id="roles-out" class="mt-2 max-h-40 overflow-auto rounded border border-slate-800 bg-slate-900 p-2 text-xs"></pre>
             </div>
-            <div>
-              <h4>Invites</h4>
-              <input id="invite-email" placeholder="email" />
-              <input id="invite-role" placeholder="role" value="viewer" />
-              <button onclick="createInvite()">Create Invite</button>
-              <pre id="invites-out"></pre>
+            <div class="rounded-xl border border-slate-800 bg-slate-950 p-4">
+              <h4 class="mb-2 font-medium">Invites</h4>
+              <input id="invite-email" placeholder="email" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <input id="invite-role" placeholder="role" value="viewer" class="mb-2 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5" />
+              <button onclick="createInvite()" class="w-full rounded bg-blue-600 px-2 py-1.5 text-sm">Create Invite</button>
+              <pre id="invites-out" class="mt-2 max-h-40 overflow-auto rounded border border-slate-800 bg-slate-900 p-2 text-xs"></pre>
             </div>
           </div>
         </div>
 
-        <div class="card">
-          <h3>Operations</h3>
-          <button onclick="loadData()">Refresh</button>
-          <button onclick="seedCriticalAlert()">Create Critical Alert</button>
-          <pre id="out"></pre>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <div class="mb-3 flex flex-wrap gap-2">
+            <button onclick="loadData()" class="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Refresh</button>
+            <button onclick="seedCriticalAlert()" class="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium hover:bg-rose-500">Create Critical Alert</button>
+            <button onclick="seedAutoFixAlert()" class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium hover:bg-emerald-500">Create Auto-Fix Candidate</button>
+          </div>
+          <pre id="out" class="max-h-56 overflow-auto rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs"></pre>
+        </div>
+
+        <div class="grid gap-6 lg:grid-cols-2">
+          <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <h3 class="text-lg font-semibold">Received alerts</h3>
+            <p class="mb-4 text-sm text-slate-400">Real-time view of triage status and decision routing.</p>
+            <div id="alerts-list" class="space-y-3"></div>
+          </div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <h3 class="text-lg font-semibold">Agent timeline</h3>
+            <p class="mb-4 text-sm text-slate-400">Transparent reasoning steps from intake to decision.</p>
+            <div id="timeline-empty" class="text-sm text-slate-400">Select an alert to view timeline.</div>
+            <ol id="timeline-list" class="hidden space-y-4 border-l border-slate-700 pl-4"></ol>
+            <div id="triage-outcome" class="mt-4 hidden rounded-xl border border-slate-800 bg-slate-950 p-4"></div>
+          </div>
         </div>
       </section>
     </main>
