@@ -57,9 +57,13 @@ func (a *HeuristicAgent) Review(alert app.Alert) app.TriageReport {
 
 	timeline := []app.TriageTimelineStep{
 		{Phase: "received", Detail: "Alert ingested and queued for AI triage", Timestamp: now.Add(-5 * time.Second)},
-		{Phase: "context", Detail: "Correlated severity, labels, and recent error patterns", Timestamp: now.Add(-3 * time.Second)},
+		{
+			Phase:     "context",
+			Detail:    "Correlated severity, labels, and recent error patterns",
+			Timestamp: now.Add(-3 * time.Second),
+		},
 		{Phase: "analysis", Detail: rootCause, Timestamp: now.Add(-1 * time.Second)},
-		{Phase: "decision", Detail: fmt.Sprintf("Decision: %s", decision), Timestamp: now},
+		{Phase: "decision", Detail: "Decision: " + decision, Timestamp: now},
 	}
 
 	return app.TriageReport{

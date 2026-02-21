@@ -62,15 +62,10 @@ func login(t *testing.T, c *http.Client, url string) {
 	}
 }
 
-func TestCriticalAlertCreatesIncident(t *testing.T) {
-	ts := httptest.NewServer(setupServer(t).Router())
-	defer ts.Close()
-	c := newClient(ts)
-	login(t, c, ts.URL)
-
-	payload := map[string]any{"title": "db down", "description": "timeout", "severity": "critical"}
+func createAlert(t *testing.T, c *http.Client, baseURL string, payload map[string]any) {
+	t.Helper()
 	b, _ := json.Marshal(payload)
-	res, err := c.Post(ts.URL+"/api/alerts", "application/json", bytes.NewReader(b))
+	res, err := c.Post(baseURL+"/api/alerts", "application/json", bytes.NewReader(b))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +73,11 @@ func TestCriticalAlertCreatesIncident(t *testing.T) {
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("expected 201 got %d", res.StatusCode)
 	}
+}
 
-	incRes, err := c.Get(ts.URL + "/api/incidents")
+func fetchIncidents(t *testing.T, c *http.Client, baseURL string) []map[string]any {
+	t.Helper()
+	incRes, err := c.Get(baseURL + "/api/incidents")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,11 +86,12 @@ func TestCriticalAlertCreatesIncident(t *testing.T) {
 	if err := json.NewDecoder(incRes.Body).Decode(&incidents); err != nil {
 		t.Fatal(err)
 	}
-	if len(incidents) != 1 {
-		t.Fatalf("expected 1 incident got %d", len(incidents))
-	}
+	return incidents
+}
 
-	alertsRes, err := c.Get(ts.URL + "/api/alerts")
+func fetchAlerts(t *testing.T, c *http.Client, baseURL string) []map[string]any {
+	t.Helper()
+	alertsRes, err := c.Get(baseURL + "/api/alerts")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +100,23 @@ func TestCriticalAlertCreatesIncident(t *testing.T) {
 	if err := json.NewDecoder(alertsRes.Body).Decode(&alerts); err != nil {
 		t.Fatal(err)
 	}
+	return alerts
+}
+
+func TestCriticalAlertCreatesIncident(t *testing.T) {
+	ts := httptest.NewServer(setupServer(t).Router())
+	defer ts.Close()
+	c := newClient(ts)
+	login(t, c, ts.URL)
+
+	createAlert(t, c, ts.URL, map[string]any{"title": "db down", "description": "timeout", "severity": "critical"})
+
+	incidents := fetchIncidents(t, c, ts.URL)
+	if len(incidents) != 1 {
+		t.Fatalf("expected 1 incident got %d", len(incidents))
+	}
+
+	alerts := fetchAlerts(t, c, ts.URL)
 	if len(alerts) != 1 {
 		t.Fatalf("expected 1 alert got %d", len(alerts))
 	}
@@ -115,39 +131,18 @@ func TestWarningAlertDoesNotCreateIncident(t *testing.T) {
 	c := newClient(ts)
 	login(t, c, ts.URL)
 
-	payload := map[string]any{"title": "queue lag", "description": "retry queue is increasing", "severity": "warning"}
-	b, _ := json.Marshal(payload)
-	res, err := c.Post(ts.URL+"/api/alerts", "application/json", bytes.NewReader(b))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusCreated {
-		t.Fatalf("expected 201 got %d", res.StatusCode)
-	}
+	createAlert(t, c, ts.URL, map[string]any{
+		"title":       "queue lag",
+		"description": "retry queue is increasing",
+		"severity":    "warning",
+	})
 
-	incRes, err := c.Get(ts.URL + "/api/incidents")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer incRes.Body.Close()
-	var incidents []map[string]any
-	if err := json.NewDecoder(incRes.Body).Decode(&incidents); err != nil {
-		t.Fatal(err)
-	}
+	incidents := fetchIncidents(t, c, ts.URL)
 	if len(incidents) != 0 {
 		t.Fatalf("expected 0 incidents got %d", len(incidents))
 	}
 
-	alertsRes, err := c.Get(ts.URL + "/api/alerts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer alertsRes.Body.Close()
-	var alerts []map[string]any
-	if err := json.NewDecoder(alertsRes.Body).Decode(&alerts); err != nil {
-		t.Fatal(err)
-	}
+	alerts := fetchAlerts(t, c, ts.URL)
 	if len(alerts) != 1 {
 		t.Fatalf("expected 1 alert got %d", len(alerts))
 	}
