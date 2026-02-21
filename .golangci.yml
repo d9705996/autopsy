@@ -1,0 +1,74 @@
+linters:
+  enable-all: true
+  disable:
+    - depguard
+    - tenv
+
+linters-settings:
+  cyclop:
+    max-complexity: 15
+  dupl:
+    threshold: 220
+
+issues:
+  exclude-rules:
+    - path: internal/store/sql.go
+      linters:
+        - exhaustruct
+        - funlen
+        - lll
+        - mnd
+        - varnamelen
+        - wrapcheck
+        - wsl
+        - nlreturn
+    - path: internal/store/memory.go
+      linters:
+        - exhaustruct
+        - varnamelen
+        - wsl
+    - path: internal/store/store.go
+      linters:
+        - interfacebloat
+    - path: internal/auth/auth.go
+      linters:
+        - exhaustruct
+        - mnd
+        - wsl
+    - path: internal/api/server.go
+      linters:
+        - exhaustruct
+        - nlreturn
+        - wsl
+    - path: internal/triage/agent.go
+      linters:
+        - nlreturn
+        - wsl
+    - path: main.go
+      linters:
+        - exhaustruct
+        - gocritic
+        - mnd
+        - nlreturn
+    - path: internal/api/server_test.go
+      linters:
+        - errchkjson
+        - nlreturn
+
+    - path: internal/api/server_test.go
+      linters:
+        - noctx
+        - paralleltest
+        - testpackage
+        - varnamelen
+        - wsl
+    - path: internal/auth/auth.go
+      linters:
+        - nlreturn
+        - varnamelen
+    - path: internal/store/memory.go
+      linters:
+        - nlreturn
+    - path: main.go
+      linters:
+        - wsl

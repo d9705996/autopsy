@@ -1,0 +1,6 @@
+body { font-family: sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; }
+main { max-width: 900px; margin: 2rem auto; padding: 1rem; }
+input, button { margin: 0.25rem; padding: 0.5rem; }
+button { background: #2563eb; border: 0; color: white; border-radius: 4px; }
+pre { background: #1e293b; padding: 1rem; border-radius: 8px; overflow:auto; }
+.hidden { display: none; }
