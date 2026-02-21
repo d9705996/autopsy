@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/example/autopsy/internal/app"
 	"github.com/example/autopsy/internal/auth"
@@ -27,6 +28,7 @@ func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/login", s.handleLogin)
 	mux.HandleFunc("/api/logout", s.handleLogout)
+	mux.HandleFunc("/api/statuspage", s.handlePublicStatusPage)
 
 	protected := http.NewServeMux()
 	protected.Handle("/api/alerts", s.auth.RequirePermission("read:dashboard", http.HandlerFunc(s.handleAlerts)))
@@ -51,10 +53,61 @@ func (s *Server) Router() http.Handler {
 	return mux
 }
 
+func (s *Server) handlePublicStatusPage(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	incidents, err := s.store.Incidents()
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	status := app.PublicStatusPage{
+		OverallStatus: "operational",
+		UpdatedAt:     time.Now().UTC(),
+		Incidents:     make([]app.StatusPageIncident, 0, len(incidents)),
+	}
+
+	for _, incident := range incidents {
+		if incident.Status != "investigating" && incident.Status != "identified" {
+			continue
+		}
+		status.Incidents = append(status.Incidents, app.StatusPageIncident{
+			ID:             incident.ID,
+			Title:          incident.Title,
+			Severity:       incident.Severity,
+			Status:         incident.Status,
+			DeclaredAt:     incident.CreatedAt,
+			StatusPageURL:  incident.StatusPageURL,
+			CurrentMessage: "Incident declared. Command role assigned, communications started, mitigation in progress.",
+			ResponsePlaybook: []string{
+				"Assign incident commander and define communication cadence",
+				"Assess customer impact against SLOs and error budget policy",
+				"Stabilize service and execute mitigation plan",
+				"Capture timeline and prepare blameless postmortem",
+			},
+		})
+
+		if incident.Severity == app.SeverityCritical {
+			status.OverallStatus = "major_outage"
+		} else if status.OverallStatus == "operational" {
+			status.OverallStatus = "degraded_performance"
+		}
+	}
+
+	writeJSON(writer, http.StatusOK, status)
+}
+
 func (s *Server) handleUI(writer http.ResponseWriter, request *http.Request) {
 	path := strings.TrimPrefix(request.URL.Path, "/")
 	if path == "" {
 		path = "index.html"
+	}
+	if path == "status" || strings.HasPrefix(path, "status/") {
+		path = "status.html"
 	}
 
 	content, err := s.uiFS.ReadFile("web/" + path)

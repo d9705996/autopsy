@@ -51,6 +51,23 @@ type Incident struct {
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
+type StatusPageIncident struct {
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Severity         Severity  `json:"severity"`
+	Status           string    `json:"status"`
+	DeclaredAt       time.Time `json:"declaredAt"`
+	StatusPageURL    string    `json:"statusPageUrl"`
+	CurrentMessage   string    `json:"currentMessage"`
+	ResponsePlaybook []string  `json:"responsePlaybook"`
+}
+
+type PublicStatusPage struct {
+	OverallStatus string               `json:"overallStatus"`
+	UpdatedAt     time.Time            `json:"updatedAt"`
+	Incidents     []StatusPageIncident `json:"incidents"`
+}
+
 type PostMortem struct {
 	ID         string    `json:"id"`
 	IncidentID string    `json:"incidentId"`
