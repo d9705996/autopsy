@@ -4,7 +4,12 @@ let toolsCache = [];
 let editingToolID = '';
 
 async function request(path, options = {}) {
-  const res = await fetch(path, options);
+  const fetchOptions = {
+    credentials: 'include',
+    cache: 'no-store',
+    ...options
+  };
+  const res = await fetch(path, fetchOptions);
   if (!res.ok) {
     throw new Error(await res.text());
   }
