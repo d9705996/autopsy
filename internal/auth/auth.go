@@ -2,59 +2,93 @@ package auth
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
-const cookieName = "autopsy_session"
+const (
+	cookieName    = "autopsy_session"
+	sessionMaxAge = 12 * time.Hour
+)
 
 var (
-	errMissingSession   = errors.New("missing session")
-	errInvalidSession   = errors.New("invalid session")
-	errInvalidSignature = errors.New("invalid signature")
+	errMissingSession = errors.New("missing session")
+	errInvalidSession = errors.New("invalid session")
 )
 
 type contextKey string
 
 const userContextKey contextKey = "user"
 
+// SessionUser is the validated user stored in the request context.
+// Permissions holds the flattened set of permission strings from the
+// user's roles (e.g. ["*"] for admin, ["read:dashboard"] for viewer).
 type SessionUser struct {
-	Username string   `json:"username"`
-	Roles    []string `json:"roles"`
+	Username    string   `json:"username"`
+	Permissions []string `json:"permissions"`
 }
 
+// claims is the JWT payload.
+type claims struct {
+	Permissions []string `json:"perms"`
+	jwt.RegisteredClaims
+}
+
+// Auth handles JWT session creation and validation.
 type Auth struct {
 	secret []byte
 }
 
+// New returns an Auth instance backed by the provided HMAC secret.
 func New(secret string) *Auth {
 	return &Auth{secret: []byte(secret)}
 }
 
-func (a *Auth) SetSession(w http.ResponseWriter, username string, roles []string) {
-	payload := username + "|" + strings.Join(roles, ",")
-	sig := a.sign(payload)
-	value := base64.StdEncoding.EncodeToString([]byte(payload + "|" + sig))
+// SetSession writes a signed JWT into an HttpOnly cookie. The token
+// carries the flattened list of permissions so no DB round-trip is
+// needed on every authenticated request.
+func (a *Auth) SetSession(w http.ResponseWriter, username string, permissions []string) {
+	now := time.Now()
+	c := &claims{
+		Permissions: permissions,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   username,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(sessionMaxAge)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	signed, err := token.SignedString(a.secret)
+	if err != nil {
+		http.Error(w, "session error", http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
-		Value:    value,
+		Value:    signed,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(12 * time.Hour),
+		MaxAge:   int(sessionMaxAge.Seconds()),
 	})
 }
 
+// ClearSession removes the session cookie.
 func (a *Auth) ClearSession(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", HttpOnly: true, Expires: time.Unix(0, 0)})
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
 }
 
+// Middleware validates the JWT and injects the SessionUser into the
+// request context. Unauthenticated requests receive 401.
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, err := a.UserFromRequest(r)
@@ -66,6 +100,8 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// RequirePermission is applied after Middleware and checks that the
+// authenticated user holds the requested permission.
 func (a *Auth) RequirePermission(permission string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := UserFromContext(r.Context())
@@ -73,7 +109,7 @@ func (a *Auth) RequirePermission(permission string, next http.Handler) http.Hand
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if hasPermission(user.Roles, permission) {
+		if hasPermission(user.Permissions, permission) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -81,46 +117,40 @@ func (a *Auth) RequirePermission(permission string, next http.Handler) http.Hand
 	})
 }
 
+// UserFromContext retrieves the authenticated user from the context.
 func UserFromContext(ctx context.Context) (SessionUser, bool) {
 	u, ok := ctx.Value(userContextKey).(SessionUser)
 	return u, ok
 }
 
-func hasPermission(roles []string, permission string) bool {
-	for _, role := range roles {
-		if role == "admin" || role == "*" || role == permission {
+// hasPermission returns true if any entry in perms is "*" or matches
+// the required permission string exactly.
+func hasPermission(perms []string, permission string) bool {
+	for _, p := range perms {
+		if p == "*" || p == permission {
 			return true
 		}
 	}
 	return false
 }
 
+// UserFromRequest parses and validates the JWT session cookie.
 func (a *Auth) UserFromRequest(r *http.Request) (SessionUser, error) {
-	c, err := r.Cookie(cookieName)
-	if err != nil || c.Value == "" {
+	cookie, err := r.Cookie(cookieName)
+	if err != nil || cookie.Value == "" {
 		return SessionUser{}, errMissingSession
 	}
-	decoded, err := base64.StdEncoding.DecodeString(c.Value)
-	if err != nil {
-		return SessionUser{}, fmt.Errorf("decode session cookie: %w", err)
-	}
-	parts := strings.Split(string(decoded), "|")
-	if len(parts) < 3 {
+
+	var c claims
+	token, err := jwt.ParseWithClaims(cookie.Value, &c, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errInvalidSession
+		}
+		return a.secret, nil
+	}, jwt.WithExpirationRequired())
+	if err != nil || !token.Valid {
 		return SessionUser{}, errInvalidSession
 	}
-	payload := strings.Join(parts[:len(parts)-1], "|")
-	if a.sign(payload) != parts[len(parts)-1] {
-		return SessionUser{}, errInvalidSignature
-	}
-	roles := []string{}
-	if parts[1] != "" {
-		roles = strings.Split(parts[1], ",")
-	}
-	return SessionUser{Username: parts[0], Roles: roles}, nil
-}
 
-func (a *Auth) sign(payload string) string {
-	mac := hmac.New(sha256.New, a.secret)
-	_, _ = mac.Write([]byte(payload))
-	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return SessionUser{Username: c.Subject, Permissions: c.Permissions}, nil
 }

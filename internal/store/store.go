@@ -27,6 +27,9 @@ type Repository interface {
 	EnsureAdminUser(username, password string) error
 	AuthenticateUser(username, password string) (app.User, error)
 	GetUser(username string) (app.User, error)
+	// UserPermissions returns the flattened list of permission strings
+	// for the given username (expanded from all assigned roles).
+	UserPermissions(username string) ([]string, error)
 	ListUsers() ([]app.User, error)
 	CreateUser(username, displayName, password string, roles []string) (app.User, error)
 	ListRoles() ([]app.Role, error)

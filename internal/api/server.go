@@ -133,6 +133,8 @@ func (s *Server) handleUI(writer http.ResponseWriter, request *http.Request) {
 	case strings.HasSuffix(path, ".js"):
 		writer.Header().Set("Content-Type", "application/javascript")
 	}
+	// Never let browsers cache HTML or JS — stale app.js causes auth loops.
+	writer.Header().Set("Cache-Control", "no-store")
 
 	writer.WriteHeader(http.StatusOK)
 	if _, err = writer.Write(content); err != nil {
@@ -162,7 +164,13 @@ func (s *Server) handleLogin(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 
-	s.auth.SetSession(writer, user.Username, user.Roles)
+	permissions, err := s.store.UserPermissions(user.Username)
+	if err != nil {
+		http.Error(writer, "permission lookup failed", http.StatusInternalServerError)
+		return
+	}
+
+	s.auth.SetSession(writer, user.Username, permissions)
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"status":     "ok",
 		"authMode":   "local",

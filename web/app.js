@@ -3,13 +3,30 @@ let selectedAlertID = '';
 let toolsCache = [];
 let editingToolID = '';
 
+// Incremented every time bootPage() is called.  Each invocation captures the
+// value at its start; only the call whose generation still matches the current
+// value is allowed to change the login/app-shell visibility.  This prevents
+// a stale in-flight /api/me (401) from hiding the app shell AFTER a
+// successful login has already shown it.
+let _bootGen = 0;
+
+// Sentinel error used to distinguish HTTP 401 from other request failures.
+class UnauthorizedError extends Error {
+  constructor() { super('unauthorized'); }
+}
+
 async function request(path, options = {}) {
-  const fetchOptions = {
+  const res = await fetch(path, {
     credentials: 'include',
     cache: 'no-store',
-    ...options
-  };
-  const res = await fetch(path, fetchOptions);
+    ...options,
+  });
+  if (res.status === 401) {
+    // Throw a typed error — callers decide whether to show the login form.
+    // Do NOT call showLoggedOut() here: a stale 401 from an earlier page load
+    // must not overwrite the UI after a successful login.
+    throw new UnauthorizedError();
+  }
   if (!res.ok) {
     throw new Error(await res.text());
   }
@@ -24,55 +41,100 @@ function showLoggedOut() {
 function showLoggedIn() {
   document.getElementById('login')?.classList.add('hidden');
   document.getElementById('app-shell')?.classList.remove('hidden');
+  showLoginError('');
+}
+
+function showLoginError(msg) {
+  let el = document.getElementById('login-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle('hidden', !msg);
 }
 
 async function login() {
+  showLoginError('');
   const username = document.getElementById('u').value;
   const password = document.getElementById('p').value;
-  await request('/api/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  await bootPage();
+  if (!username || !password) {
+    showLoginError('Username and password are required.');
+    return;
+  }
+  try {
+    // Use fetch directly so the 401-interceptor in request() does not
+    // interfere with the login endpoint — a 401 here means bad credentials,
+    // not an expired session.
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (res.status === 401) {
+      showLoginError('Invalid username or password.');
+      return;
+    }
+    if (!res.ok) {
+      showLoginError(`Login failed: ${await res.text()}`);
+      return;
+    }
+    await bootPage();
+  } catch (err) {
+    showLoginError('Unable to reach the server. Please try again.');
+  }
 }
 
 async function logout() {
-  await request('/api/logout', { method: 'POST' });
+  // Use fetch directly — logout is a public endpoint and should always succeed
+  // regardless of session state; bypassing the 401-interceptor avoids showing
+  // the login screen twice.
+  await fetch('/api/logout', { method: 'POST', credentials: 'include', cache: 'no-store' }).catch(() => { });
   showLoggedOut();
 }
 
 async function bootPage() {
-  try {
-    const me = await request('/api/me');
-    showLoggedIn();
-    const who = document.getElementById('whoami');
-    if (who) {
-      who.textContent = `Logged in as ${me.username} (${me.roles.join(', ')})`;
-    }
-    const isAdmin = me.roles.includes('admin');
-    document.querySelectorAll('[data-admin-only="true"]').forEach((el) => {
-      el.classList.toggle('hidden', !isAdmin);
-    });
+  // Grab this boot cycle's generation number before the first await so that
+  // any earlier, still-in-flight bootPage() cannot clobber our UI state.
+  const gen = ++_bootGen;
 
-    const page = document.body.dataset.page;
-    if (page === 'dashboard') {
-      await loadDashboard();
-    }
-    if (page === 'alerts') {
-      await loadAlertsPage();
-    }
-    if (page === 'incidents') {
-      await loadIncidentsPage();
-    }
-    if (page === 'tools') {
-      await loadToolsPage();
-    }
-    if (page === 'admin' && isAdmin) {
-      await Promise.all([loadUsers(), loadRoles(), loadInvites()]);
-    }
+  // Phase 1: verify the session.
+  let me;
+  try {
+    me = await request('/api/me');
   } catch (_) {
-    showLoggedOut();
+    // Only show the login form if we are still the latest boot cycle.
+    if (gen === _bootGen) showLoggedOut();
+    return;
+  }
+
+  // Abort if a newer bootPage() call has already taken over.
+  if (gen !== _bootGen) return;
+
+  // Phase 2: session confirmed — reveal the app shell.
+  showLoggedIn();
+  const who = document.getElementById('whoami');
+  if (who) {
+    who.textContent = `Logged in as ${me.username} (${me.roles.join(', ')})`;
+  }
+  const isAdmin = me.roles.includes('admin');
+  document.querySelectorAll('[data-admin-only="true"]').forEach((el) => {
+    el.classList.toggle('hidden', !isAdmin);
+  });
+
+  const page = document.body.dataset.page;
+  try {
+    if (page === 'dashboard') await loadDashboard();
+    if (page === 'alerts') await loadAlertsPage();
+    if (page === 'incidents') await loadIncidentsPage();
+    if (page === 'tools') await loadToolsPage();
+    if (page === 'admin' && isAdmin) await Promise.all([loadUsers(), loadRoles(), loadInvites()]);
+  } catch (err) {
+    if (err instanceof UnauthorizedError && gen === _bootGen) {
+      // Session expired mid-page-load; show login form.
+      showLoggedOut();
+    } else {
+      console.error('Page load error:', err);
+    }
   }
 }
 
@@ -282,7 +344,7 @@ async function createUser() {
   const displayName = document.getElementById('new-display').value;
   const password = document.getElementById('new-password').value;
   const roles = document.getElementById('new-roles').value.split(',').map((s) => s.trim()).filter(Boolean);
-  await request('/api/admin/users', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username, displayName, password, roles }) });
+  await request('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, displayName, password, roles }) });
   await loadUsers();
 }
 
@@ -290,14 +352,14 @@ async function createRole() {
   const name = document.getElementById('role-name').value;
   const description = document.getElementById('role-desc').value;
   const permissions = document.getElementById('role-perms').value.split(',').map((s) => s.trim()).filter(Boolean);
-  await request('/api/admin/roles', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name, description, permissions }) });
+  await request('/api/admin/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description, permissions }) });
   await loadRoles();
 }
 
 async function createInvite() {
   const email = document.getElementById('invite-email').value;
   const role = document.getElementById('invite-role').value;
-  await request('/api/admin/invites', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, role }) });
+  await request('/api/admin/invites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, role }) });
   await loadInvites();
 }
 

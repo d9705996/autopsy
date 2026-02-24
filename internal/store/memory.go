@@ -212,8 +212,9 @@ func (s *MemoryStore) EnsureAdminUser(_, _ string) error { return nil }
 func (s *MemoryStore) AuthenticateUser(_, _ string) (app.User, error) {
 	return app.User{}, errNotImplemented
 }
-func (s *MemoryStore) GetUser(_ string) (app.User, error) { return app.User{}, errNotImplemented }
-func (s *MemoryStore) ListUsers() ([]app.User, error)     { return []app.User{}, nil }
+func (s *MemoryStore) GetUser(_ string) (app.User, error)         { return app.User{}, errNotImplemented }
+func (s *MemoryStore) UserPermissions(_ string) ([]string, error) { return []string{}, nil }
+func (s *MemoryStore) ListUsers() ([]app.User, error)             { return []app.User{}, nil }
 
 func (s *MemoryStore) CreateUser(_, _, _ string, _ []string) (app.User, error) {
 	return app.User{}, errNotImplemented

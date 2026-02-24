@@ -372,6 +372,48 @@ func (s *SQLStore) rolesForUser(userID int64) ([]string, error) {
 	return out, rows.Err()
 }
 
+// UserPermissions returns the flattened list of permission strings for all
+// roles assigned to the given username. Duplicate permissions are deduplicated.
+func (s *SQLStore) UserPermissions(username string) ([]string, error) {
+	// #nosec G201 -- placeholders are generated internally for driver compatibility.
+	q := `SELECT DISTINCT r.permissions
+		FROM roles r
+		INNER JOIN user_roles ur ON ur.role_id = r.id
+		INNER JOIN users u ON u.id = ur.user_id
+		WHERE u.username = ?`
+	if s.dialect == postgresDialect {
+		q = `SELECT DISTINCT r.permissions
+		FROM roles r
+		INNER JOIN user_roles ur ON ur.role_id = r.id
+		INNER JOIN users u ON u.id = ur.user_id
+		WHERE u.username = $1`
+	}
+	rows, err := s.db.Query(q, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[string]struct{}{}
+	var out []string
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var perms []string
+		if err := json.Unmarshal([]byte(raw), &perms); err != nil {
+			continue
+		}
+		for _, p := range perms {
+			if _, exists := seen[p]; !exists {
+				seen[p] = struct{}{}
+				out = append(out, p)
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
 func (s *SQLStore) ListUsers() ([]app.User, error) {
 	rows, err := s.db.Query(`SELECT id,username,display_name,password_hash,enabled,created_at FROM users ORDER BY username`)
 	if err != nil {

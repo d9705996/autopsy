@@ -391,3 +391,107 @@ func TestPublicStatusPageIncludesServicesWithoutIncidents(t *testing.T) {
 		t.Fatalf("expected 100 availability got %#v", svc["availabilityPercent"])
 	}
 }
+
+func loginAs(t *testing.T, c *http.Client, baseURL, username, password string) int {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"username": username, "password": password})
+	res, err := c.Post(baseURL+"/api/login", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	return res.StatusCode
+}
+
+// setupServerWithViewer creates a server with an admin user and a viewer user.
+func setupServerWithViewer(t *testing.T) (*Server, *store.SQLStore) {
+	t.Helper()
+	// Use a distinct named in-memory DB to avoid sharing state with setupServer.
+	repo, err := store.NewSQLStore("sqlite", "file:autopsy_viewer_test?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.EnsureRole(app.Role{Name: "viewer", Description: "Read-only", Permissions: []string{"read:dashboard"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.EnsureAdminUser("admin", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateUser("viewer1", "Viewer One", "viewerpass", []string{"viewer"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	return NewServer(repo, triage.NewHeuristicAgent(), auth.New("test-secret"), testFS), repo
+}
+
+func TestViewerCanAccessDashboardRoutes(t *testing.T) {
+	srv, _ := setupServerWithViewer(t)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	jar, _ := cookiejar.New(nil)
+	c := ts.Client()
+	c.Jar = jar
+
+	if code := loginAs(t, c, ts.URL, "viewer1", "viewerpass"); code != http.StatusOK {
+		t.Fatalf("viewer login failed: %d", code)
+	}
+
+	for _, path := range []string{"/api/alerts", "/api/incidents", "/api/tools"} {
+		res, err := c.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("viewer GET %s: expected 200 got %d", path, res.StatusCode)
+		}
+	}
+}
+
+func TestViewerCannotAccessAdminRoutes(t *testing.T) {
+	srv, _ := setupServerWithViewer(t)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	jar, _ := cookiejar.New(nil)
+	c := ts.Client()
+	c.Jar = jar
+
+	if code := loginAs(t, c, ts.URL, "viewer1", "viewerpass"); code != http.StatusOK {
+		t.Fatalf("viewer login failed: %d", code)
+	}
+
+	for _, path := range []string{"/api/admin/users", "/api/admin/roles", "/api/admin/invites"} {
+		res, err := c.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusForbidden {
+			t.Errorf("viewer GET %s: expected 403 got %d", path, res.StatusCode)
+		}
+	}
+}
+
+func TestUserPermissionsStoredCorrectly(t *testing.T) {
+	_, repo := setupServerWithViewer(t)
+
+	// Admin should have wildcard permission.
+	adminPerms, err := repo.UserPermissions("admin")
+	if err != nil {
+		t.Fatalf("UserPermissions admin: %v", err)
+	}
+	if len(adminPerms) != 1 || adminPerms[0] != "*" {
+		t.Errorf("expected admin permissions [*], got %v", adminPerms)
+	}
+
+	// Viewer should have read:dashboard permission.
+	viewerPerms, err := repo.UserPermissions("viewer1")
+	if err != nil {
+		t.Fatalf("UserPermissions viewer1: %v", err)
+	}
+	if len(viewerPerms) != 1 || viewerPerms[0] != "read:dashboard" {
+		t.Errorf("expected viewer permissions [read:dashboard], got %v", viewerPerms)
+	}
+}
