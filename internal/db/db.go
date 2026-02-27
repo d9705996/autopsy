@@ -71,7 +71,7 @@ func openPostgres(ctx context.Context, cfg *config.DBConfig) (*gorm.DB, *pgxpool
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse db dsn: %w", err)
 	}
-	poolCfg.MaxConns = int32(cfg.MaxConns) //nolint:gosec
+	poolCfg.MaxConns = int32(cfg.MaxConns) //nolint:gosec // MaxConns is read from validated, bounded application config
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -113,7 +113,7 @@ func runPostgresMigrations(dsn string) error {
 		return fmt.Errorf("parse dsn for migrations: %w", err)
 	}
 	sqlDB := stdlib.OpenDB(*poolCfg.ConnConfig)
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	driver, err := migratepostgres.WithInstance(sqlDB, &migratepostgres.Config{})
 	if err != nil {
@@ -123,7 +123,7 @@ func runPostgresMigrations(dsn string) error {
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("run migrations: %w", err)

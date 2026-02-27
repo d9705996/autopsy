@@ -21,7 +21,7 @@ func (m *mockPinger) Ping(_ context.Context) error { return m.err }
 
 func TestServeHealth_AlwaysOK(t *testing.T) {
 	h := health.New(&mockPinger{})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", http.NoBody)
 	w := httptest.NewRecorder()
 	h.ServeHealth(w, req)
 
@@ -35,7 +35,7 @@ func TestServeHealth_AlwaysOK(t *testing.T) {
 
 func TestServeReady_DBHealthy(t *testing.T) {
 	h := health.New(&mockPinger{err: nil})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ready", http.NoBody)
 	w := httptest.NewRecorder()
 	h.ServeReady(w, req)
 
@@ -44,7 +44,7 @@ func TestServeReady_DBHealthy(t *testing.T) {
 
 func TestServeReady_DBUnhealthy(t *testing.T) {
 	h := health.New(&mockPinger{err: errors.New("connection refused")})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ready", http.NoBody)
 	w := httptest.NewRecorder()
 	h.ServeReady(w, req)
 
@@ -58,7 +58,7 @@ func TestServeReady_DBUnhealthy(t *testing.T) {
 
 func TestServeReady_NilDB(t *testing.T) {
 	h := health.New(nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ready", http.NoBody)
 	w := httptest.NewRecorder()
 	h.ServeReady(w, req)
 

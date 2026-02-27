@@ -44,7 +44,7 @@ func (s *RefreshStore) IssueRefreshToken(_ context.Context, userID string, ttl t
 
 // RotateRefreshToken validates the given token, revokes it, and issues a new one.
 // Returns the new refresh token and the user ID.
-func (s *RefreshStore) RotateRefreshToken(_ context.Context, rawToken string) (string, string, error) {
+func (s *RefreshStore) RotateRefreshToken(_ context.Context, rawToken string) (token string, userID string, err error) {
 	h := hashToken(rawToken)
 
 	var rt model.RefreshToken
