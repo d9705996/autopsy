@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
   packages: write
+  pull-requests: write
+  security-events: write
 
 jobs:
   docker-build:
@@ -27,11 +29,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub (for Scout)
+        if: github.event_name == 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build (and push on main)
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ghcr.io/${{ github.repository }}:edge
           build-args: |
             VERSION=edge
@@ -39,3 +50,14 @@ jobs:
             DATE=${{ github.event.repository.updated_at }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Docker Scout — CVEs & recommendations
+        if: github.event_name == 'pull_request'
+        uses: docker/scout-action@v1
+        with:
+          command: cves,recommendations
+          image: local://ghcr.io/${{ github.repository }}:edge
+          only-severities: critical,high,medium
+          write-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary: true

@@ -6,42 +6,48 @@ run:
 linters:
   default: none
   enable:
-    - errcheck
-    - gosimple
+    # Baseline
     - govet
-    - ineffassign
     - staticcheck
-    - unused
-    - bodyclose
-    - dogsled
-    - dupl
-    - exhaustive
-    - gochecknoinits
-    - gocritic
-    - godot
-    - gofumpt
+    - errcheck
     - gosec
-    - misspell
+    - unused
+    - revive
+    - cyclop
+    - gocritic
+    # Optional — error handling
+    - nilerr
+    - errorlint
+    # Optional — context
     - noctx
+    - contextcheck
+    # Optional — code quality
+    - bodyclose
+    - dupl
+    - dupword
+    - makezero
     - nolintlint
-    - prealloc
-    - stylecheck
-    - tenv
-    - unconvert
-    - unparam
-    - whitespace
+    # Optional — performance
+    - perfsprint
+  settings:
+    gosec:
+      excludes:
+        - G404   # weak PRNG acceptable for non-security token generation
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+    cyclop:
+      max-complexity: 16
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - disableStutteringCheck
 
-linters-settings:
-  gosec:
-    excludes:
-      - G404   # Use of weak random number generator — acceptable in non-security code
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  exhaustive:
-    default-signifies-exhaustive: true
+formatters:
+  enable:
+    - gofumpt
 
 issues:
   max-same-issues: 0

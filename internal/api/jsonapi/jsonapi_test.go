@@ -59,10 +59,14 @@ func TestRenderError(t *testing.T) {
 func TestRenderErrors_MultipleErrors(t *testing.T) {
 	w := httptest.NewRecorder()
 	jsonapi.RenderErrors(w, http.StatusUnprocessableEntity, []jsonapi.ErrorObject{
-		{Code: "missing_field", Title: "Missing Field", Detail: "name is required",
-			Source: &jsonapi.ErrorSource{Pointer: "/data/attributes/name"}},
-		{Code: "missing_field", Title: "Missing Field", Detail: "email is required",
-			Source: &jsonapi.ErrorSource{Pointer: "/data/attributes/email"}},
+		{
+			Code: "missing_field", Title: "Missing Field", Detail: "name is required",
+			Source: &jsonapi.ErrorSource{Pointer: "/data/attributes/name"},
+		},
+		{
+			Code: "missing_field", Title: "Missing Field", Detail: "email is required",
+			Source: &jsonapi.ErrorSource{Pointer: "/data/attributes/email"},
+		},
 	})
 
 	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)

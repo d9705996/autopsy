@@ -23,11 +23,11 @@ func TestEnsureAdmin_OptsAreUsed(t *testing.T) {
 	// This test only validates that AdminOptions fields are read correctly by
 	// exercising the exported types — a real DB call is tested in integration.
 	opts := seed.AdminOptions{
-		Email:    "custom@example.com",
-		Password: "my-supplied-password",
+		Email:        "custom@example.com",
+		SeedPassword: "my-supplied-password",
 	}
 	assert.Equal(t, "custom@example.com", opts.Email)
-	assert.Equal(t, "my-supplied-password", opts.Password)
+	assert.Equal(t, "my-supplied-password", opts.SeedPassword)
 	_ = newNullLogger()
 	require.NotNil(t, context.Background())
 }

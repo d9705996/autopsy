@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 
 	"github.com/d9705996/autopsy/internal/config"
@@ -71,7 +72,7 @@ func openPostgres(ctx context.Context, cfg *config.DBConfig) (*gorm.DB, *pgxpool
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse db dsn: %w", err)
 	}
-	poolCfg.MaxConns = int32(cfg.MaxConns) //nolint:gosec
+	poolCfg.MaxConns = cfg.MaxConns
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -113,7 +114,7 @@ func runPostgresMigrations(dsn string) error {
 		return fmt.Errorf("parse dsn for migrations: %w", err)
 	}
 	sqlDB := stdlib.OpenDB(*poolCfg.ConnConfig)
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	driver, err := migratepostgres.WithInstance(sqlDB, &migratepostgres.Config{})
 	if err != nil {
@@ -123,22 +124,12 @@ func runPostgresMigrations(dsn string) error {
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 	return nil
-}
-
-// stripScheme is kept for any callers normalising DSNs (unused by current code).
-func stripScheme(dsn string) string {
-	for _, prefix := range []string{"postgresql://", "postgres://"} {
-		if len(dsn) > len(prefix) && dsn[:len(prefix)] == prefix {
-			return dsn[len(prefix):]
-		}
-	}
-	return dsn
 }
 
 // DBPinger wraps *gorm.DB and satisfies the health.Pinger interface.

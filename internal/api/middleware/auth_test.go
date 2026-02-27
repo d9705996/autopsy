@@ -27,7 +27,7 @@ func TestRequireAuth_MissingHeader(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -41,7 +41,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+issueToken(t, []string{"Viewer"}))
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -53,7 +53,7 @@ func TestRequireAuth_InvalidToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	req.Header.Set("Authorization", "Bearer this.is.garbage")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -69,7 +69,7 @@ func TestRequirePermission_Viewer_CannotCreate(t *testing.T) {
 		),
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+issueToken(t, []string{"Viewer"}))
 	w := httptest.NewRecorder()
 	chain.ServeHTTP(w, req)
@@ -85,7 +85,7 @@ func TestRequirePermission_Responder_CanCreate(t *testing.T) {
 		),
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+issueToken(t, []string{"Responder"}))
 	w := httptest.NewRecorder()
 	chain.ServeHTTP(w, req)
@@ -101,7 +101,7 @@ func TestRequirePermission_Admin_Wildcard(t *testing.T) {
 		),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+issueToken(t, []string{"Admin"}))
 	w := httptest.NewRecorder()
 	chain.ServeHTTP(w, req)

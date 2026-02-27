@@ -37,7 +37,7 @@ type Config struct {
 
 // New initialises the OTel SDK and constructs a *slog.Logger.
 // Call Shutdown on process exit to flush exporters.
-func New(ctx context.Context, cfg Config) (*Provider, *slog.Logger, error) {
+func New(ctx context.Context, cfg *Config) (*Provider, *slog.Logger, error) {
 	logger := buildLogger(cfg.LogLevel, cfg.LogFormat)
 
 	res, err := resource.Merge(
