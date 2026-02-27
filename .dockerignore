@@ -1,0 +1,5 @@
+.env
+.env.local
+*.env
+ui/dist/
+web/node_modules/

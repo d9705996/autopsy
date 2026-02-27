@@ -1,74 +1,49 @@
+version: "2"
+
+run:
+  timeout: 5m
+
 linters:
-  enable-all: true
-  disable:
-    - depguard
+  default: none
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - dogsled
+    - dupl
+    - exhaustive
+    - gochecknoinits
+    - gocritic
+    - godot
+    - gofumpt
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - prealloc
+    - stylecheck
     - tenv
+    - unconvert
+    - unparam
+    - whitespace
 
 linters-settings:
-  cyclop:
-    max-complexity: 15
-  dupl:
-    threshold: 220
+  gosec:
+    excludes:
+      - G404   # Use of weak random number generator — acceptable in non-security code
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+  exhaustive:
+    default-signifies-exhaustive: true
 
 issues:
-  exclude-rules:
-    - path: internal/store/sql.go
-      linters:
-        - exhaustruct
-        - funlen
-        - lll
-        - mnd
-        - varnamelen
-        - wrapcheck
-        - wsl
-        - nlreturn
-    - path: internal/store/memory.go
-      linters:
-        - exhaustruct
-        - varnamelen
-        - wsl
-    - path: internal/store/store.go
-      linters:
-        - interfacebloat
-    - path: internal/auth/auth.go
-      linters:
-        - exhaustruct
-        - mnd
-        - wsl
-    - path: internal/api/server.go
-      linters:
-        - exhaustruct
-        - nlreturn
-        - wsl
-    - path: internal/triage/agent.go
-      linters:
-        - nlreturn
-        - wsl
-    - path: main.go
-      linters:
-        - exhaustruct
-        - gocritic
-        - mnd
-        - nlreturn
-    - path: internal/api/server_test.go
-      linters:
-        - errchkjson
-        - nlreturn
-
-    - path: internal/api/server_test.go
-      linters:
-        - noctx
-        - paralleltest
-        - testpackage
-        - varnamelen
-        - wsl
-    - path: internal/auth/auth.go
-      linters:
-        - nlreturn
-        - varnamelen
-    - path: internal/store/memory.go
-      linters:
-        - nlreturn
-    - path: main.go
-      linters:
-        - wsl
+  max-same-issues: 0
+  new: false
+  fix: false

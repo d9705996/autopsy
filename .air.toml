@@ -1,0 +1,23 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd     = "go build -o tmp/autopsy ./cmd/autopsy"
+  bin     = "tmp/autopsy"
+  delay   = 500
+  exclude_dir = ["ui/dist", "web/node_modules", "tmp"]
+  include_ext = ["go", "tpl", "tmpl", "html", "sql"]
+  kill_delay  = "500ms"
+  log = "tmp/build-errors.log"
+
+[color]
+  main    = "magenta"
+  watcher = "cyan"
+  build   = "yellow"
+  runner  = "green"
+
+[misc]
+  clean_on_exit = true
+
+[log]
+  time = false

@@ -5,13 +5,61 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  go-test:
+    name: Go tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: autopsy
+          POSTGRES_PASSWORD: autopsy
+          POSTGRES_DB: autopsy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        env:
+          DB_DSN: postgres://autopsy:autopsy@localhost:5432/autopsy?sslmode=disable
+          JWT_SECRET: test-secret
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+
+  ui-test:
+    name: UI type-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+
+      - uses: actions/setup-node@v4
         with:
-          go-version: '1.22'
-      - name: go test
-        run: go test ./... -cover
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install deps
+        run: npm ci --prefix web
+
+      - name: Type-check
+        run: npx --prefix web tsc -b --noEmit

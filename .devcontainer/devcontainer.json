@@ -1,0 +1,66 @@
+{
+    "name": "Autopsy Dev Container",
+    "image": "mcr.microsoft.com/devcontainers/go:1-1.25-bullseye",
+    "features": {
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "22"
+        },
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "version": "latest",
+            "enableNonRootDocker": "true",
+            "moby": "true"
+        },
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    "postCreateCommand": "go mod download && npm install --prefix web",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "golang.go",
+                "esbenp.prettier-vscode",
+                "dbaeumer.vscode-eslint",
+                "ms-azuretools.vscode-docker",
+                "redhat.vscode-yaml",
+                "github.vscode-github-actions",
+                "biomejs.biome"
+            ],
+            "settings": {
+                "go.toolsManagement.checkForUpdates": "local",
+                "go.useLanguageServer": true,
+                "go.lintTool": "golangci-lint",
+                "go.lintFlags": [
+                    "--fast"
+                ],
+                "[go]": {
+                    "editor.formatOnSave": true,
+                    "editor.defaultFormatter": "golang.go"
+                },
+                "[typescript]": {
+                    "editor.formatOnSave": true,
+                    "editor.defaultFormatter": "esbenp.prettier-vscode"
+                },
+                "[typescriptreact]": {
+                    "editor.formatOnSave": true,
+                    "editor.defaultFormatter": "esbenp.prettier-vscode"
+                }
+            }
+        }
+    },
+    "forwardPorts": [
+        8080,
+        5173,
+        5432
+    ],
+    "portsAttributes": {
+        "8080": {
+            "label": "Go API server"
+        },
+        "5173": {
+            "label": "Vite dev server"
+        },
+        "5432": {
+            "label": "Postgres"
+        }
+    },
+    "remoteUser": "vscode"
+}

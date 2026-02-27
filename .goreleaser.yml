@@ -1,0 +1,86 @@
+version: 2
+
+project_name: autopsy
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: autopsy
+    main: ./cmd/autopsy
+    binary: autopsy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/d9705996/autopsy/internal/version.Version={{.Version}}
+      - -X github.com/d9705996/autopsy/internal/version.Commit={{.Commit}}
+      - -X github.com/d9705996/autopsy/internal/version.Date={{.Date}}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: zip
+
+dockers:
+  - image_templates:
+      - "ghcr.io/d9705996/autopsy:{{ .Tag }}-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .Commit }}"
+      - "--build-arg=DATE={{ .Date }}"
+
+  - image_templates:
+      - "ghcr.io/d9705996/autopsy:{{ .Tag }}-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--build-arg=COMMIT={{ .Commit }}"
+      - "--build-arg=DATE={{ .Date }}"
+
+docker_manifests:
+  - name_template: "ghcr.io/d9705996/autopsy:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/d9705996/autopsy:{{ .Tag }}-amd64"
+      - "ghcr.io/d9705996/autopsy:{{ .Tag }}-arm64"
+
+  - name_template: "ghcr.io/d9705996/autopsy:latest"
+    image_templates:
+      - "ghcr.io/d9705996/autopsy:{{ .Tag }}-amd64"
+      - "ghcr.io/d9705996/autopsy:{{ .Tag }}-arm64"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: d9705996
+    name: autopsy
+  draft: false
+  prerelease: auto

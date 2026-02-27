@@ -1,0 +1,16 @@
+apiVersion: v2
+name: autopsy
+description: Autopsy — Open-source incident response management platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - incident-response
+  - observability
+  - on-call
+home: https://github.com/d9705996/autopsy
+sources:
+  - https://github.com/d9705996/autopsy
+maintainers:
+  - name: autopsy-maintainers
+    url: https://github.com/d9705996/autopsy

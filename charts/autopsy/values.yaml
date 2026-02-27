@@ -1,0 +1,94 @@
+# Default values for autopsy.
+# Override via --set or a custom values file.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/d9705996/autopsy
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: autopsy.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# Environment variables for the autopsy container.
+env:
+  PORT: "8080"
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+  ACCESS_TOKEN_TTL: 15m
+  REFRESH_TOKEN_TTL: 720h
+  WORKER_CONCURRENCY: "10"
+  OTEL_SERVICE_NAME: autopsy
+
+# Secrets — these are expected to be provided via external secret manager or env.
+# Do NOT store real secrets in this file.
+secretEnv:
+  DB_DSN: ""       # Required: postgres connection string
+  JWT_SECRET: ""   # Required: JWT signing secret
+
+postgresql:
+  # Set enabled: false and provide DB_DSN in secretEnv to use an external PG.
+  enabled: true
+  auth:
+    username: autopsy
+    password: autopsy
+    database: autopsy
+  primary:
+    persistence:
+      size: 10Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
