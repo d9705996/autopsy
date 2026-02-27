@@ -8,6 +8,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/d9705996/autopsy/internal/config"
 	"github.com/d9705996/autopsy/internal/model"
@@ -72,7 +73,10 @@ func openPostgres(ctx context.Context, cfg *config.DBConfig) (*gorm.DB, *pgxpool
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse db dsn: %w", err)
 	}
-	poolCfg.MaxConns = int32(cfg.MaxConns) //nolint:gosec // MaxConns is read from validated, bounded application config
+	if cfg.MaxConns > math.MaxInt32 {
+		return nil, nil, fmt.Errorf("DB_MAX_CONNS %d exceeds maximum value (%d)", cfg.MaxConns, math.MaxInt32)
+	}
+	poolCfg.MaxConns = int32(cfg.MaxConns)
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {

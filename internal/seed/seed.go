@@ -17,7 +17,7 @@ import (
 // AdminOptions configures the seed admin user.
 type AdminOptions struct {
 	Email    string
-	Password string //nolint:gosec // intentional: seed opts carry an optional plaintext password before hashing
+	Password string
 }
 
 // EnsureAdmin creates a seed admin user if no users exist.

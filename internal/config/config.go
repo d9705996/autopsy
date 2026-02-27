@@ -43,7 +43,7 @@ type LogConfig struct {
 
 // JWTConfig holds JSON Web Token signing and expiry settings.
 type JWTConfig struct {
-	Secret     string //nolint:gosec // intentional: holds JWT signing secret loaded from env
+	Secret     string
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 }
@@ -51,7 +51,7 @@ type JWTConfig struct {
 // AIConfig holds AI provider connection settings.
 type AIConfig struct {
 	Provider string
-	APIKey   string //nolint:gosec // intentional: holds AI provider API key loaded from env
+	APIKey   string
 	APIBase  string
 	Model    string
 }
