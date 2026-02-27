@@ -69,8 +69,8 @@ func run() error {
 
 	// --- Seed admin ----------------------------------------------------------
 	if err := seed.EnsureAdmin(ctx, gormDB, seed.AdminOptions{
-		Email:    cfg.App.SeedAdminEmail,
-		Password: cfg.App.SeedAdminPassword,
+		Email:        cfg.App.SeedAdminEmail,
+		SeedPassword: cfg.App.SeedAdminPassword,
 	}, log); err != nil {
 		return fmt.Errorf("seed admin: %w", err)
 	}
@@ -101,10 +101,10 @@ func run() error {
 
 	// --- HTTP routes ---------------------------------------------------------
 	healthHandler := health.New(db.NewPinger(gormDB))
-	authHandler := handler.NewAuthHandler(gormDB, cfg.JWT.Secret, cfg.JWT.AccessTTL, cfg.JWT.RefreshTTL)
+	authHandler := handler.NewAuthHandler(gormDB, cfg.JWT.SigningKey(), cfg.JWT.AccessTTL, cfg.JWT.RefreshTTL)
 
 	mux := http.NewServeMux()
-	autopsyapi.RegisterRoutes(mux, healthHandler, authHandler, cfg.JWT.Secret)
+	autopsyapi.RegisterRoutes(mux, healthHandler, authHandler, cfg.JWT.SigningKey())
 	// Prometheus metrics endpoint
 	mux.Handle("GET /metrics", promhttp.Handler())
 

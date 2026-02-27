@@ -16,8 +16,8 @@ import (
 
 // AdminOptions configures the seed admin user.
 type AdminOptions struct {
-	Email    string
-	Password string
+	Email        string
+	SeedPassword string // if empty, a random password is generated
 }
 
 // EnsureAdmin creates a seed admin user if no users exist.
@@ -34,7 +34,7 @@ func EnsureAdmin(_ context.Context, db *gorm.DB, opts AdminOptions, log *slog.Lo
 		return nil
 	}
 
-	password := opts.Password
+	password := opts.SeedPassword
 	if password == "" {
 		var err error
 		password, err = generatePassword()

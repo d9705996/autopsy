@@ -32,7 +32,7 @@ type DBConfig struct {
 	Driver   string // "sqlite" (default) or "postgres"
 	DSN      string // required when Driver == "postgres"
 	File     string // SQLite database file path (default: "autopsy.db")
-	MaxConns int    // Postgres only
+	MaxConns int32  // Postgres only
 }
 
 // LogConfig controls structured logging output.
@@ -43,18 +43,24 @@ type LogConfig struct {
 
 // JWTConfig holds JSON Web Token signing and expiry settings.
 type JWTConfig struct {
-	Secret     string
+	signingKey []byte // unexported; set by Load from JWT_SECRET env var
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 }
 
+// SigningKey returns the JWT signing secret.
+func (c JWTConfig) SigningKey() string { return string(c.signingKey) }
+
 // AIConfig holds AI provider connection settings.
 type AIConfig struct {
 	Provider string
-	APIKey   string
+	apiKey   string // unexported; set by Load from AI_API_KEY env var
 	APIBase  string
 	Model    string
 }
+
+// APIKey returns the AI provider API key.
+func (c AIConfig) APIKey() string { return c.apiKey }
 
 // AppConfig holds application-level settings such as seed credentials.
 type AppConfig struct {
@@ -87,17 +93,18 @@ func Load() (*Config, error) {
 	if cfg.DB.Driver == "postgres" && cfg.DB.DSN == "" {
 		return nil, errors.New("DB_DSN is required when DB_DRIVER=postgres")
 	}
-	cfg.DB.MaxConns = envInt("DB_MAX_CONNS", 25)
+	cfg.DB.MaxConns = envInt32("DB_MAX_CONNS", 25)
 
 	// Log
 	cfg.Log.Level = envStr("LOG_LEVEL", "info")
 	cfg.Log.Format = envStr("LOG_FORMAT", "json")
 
 	// JWT (required)
-	cfg.JWT.Secret = os.Getenv("JWT_SECRET")
-	if cfg.JWT.Secret == "" {
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
 		return nil, errors.New("JWT_SECRET is required")
 	}
+	cfg.JWT.signingKey = []byte(jwtSecret)
 	var err error
 	cfg.JWT.AccessTTL, err = envDuration("JWT_ACCESS_TTL", 15*time.Minute)
 	if err != nil {
@@ -110,7 +117,7 @@ func Load() (*Config, error) {
 
 	// AI
 	cfg.AI.Provider = envStr("AI_PROVIDER", "noop")
-	cfg.AI.APIKey = os.Getenv("AI_API_KEY")
+	cfg.AI.apiKey = os.Getenv("AI_API_KEY")
 	cfg.AI.APIBase = envStr("AI_API_BASE", "https://api.openai.com/v1")
 	cfg.AI.Model = envStr("AI_MODEL", "gpt-4o-mini")
 
@@ -144,6 +151,18 @@ func envInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func envInt32(key string, def int32) int32 {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 32) // bitSize=32 ensures value fits in int32
+	if err != nil || n < 1 {
+		return def
+	}
+	return int32(n)
 }
 
 func envDuration(key string, def time.Duration) (time.Duration, error) {
