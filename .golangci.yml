@@ -7,10 +7,9 @@ linters:
   default: none
   enable:
     - errcheck
-    - gosimple
+    - staticcheck
     - govet
     - ineffassign
-    - staticcheck
     - unused
     - bodyclose
     - dogsled
@@ -24,8 +23,6 @@ linters:
     - noctx
     - nolintlint
     - prealloc
-    - stylecheck
-    - tenv
     - unconvert
     - unparam
     - whitespace
