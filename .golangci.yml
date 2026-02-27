@@ -19,7 +19,6 @@ linters:
     - gochecknoinits
     - gocritic
     - godot
-    - gofumpt
     - gosec
     - misspell
     - noctx
@@ -41,6 +40,10 @@ linters:
         - performance
     exhaustive:
       default-signifies-exhaustive: true
+
+formatters:
+  enable:
+    - gofumpt
 
 issues:
   max-same-issues: 0
