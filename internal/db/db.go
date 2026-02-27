@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 
 	"github.com/d9705996/autopsy/internal/config"
@@ -125,20 +126,10 @@ func runPostgresMigrations(dsn string) error {
 	}
 	defer func() { _, _ = m.Close() }()
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 	return nil
-}
-
-// stripScheme is kept for any callers normalising DSNs (unused by current code).
-func stripScheme(dsn string) string {
-	for _, prefix := range []string{"postgresql://", "postgres://"} {
-		if len(dsn) > len(prefix) && dsn[:len(prefix)] == prefix {
-			return dsn[len(prefix):]
-		}
-	}
-	return dsn
 }
 
 // DBPinger wraps *gorm.DB and satisfies the health.Pinger interface.

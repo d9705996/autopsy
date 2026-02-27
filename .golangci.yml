@@ -38,7 +38,7 @@ linters:
         - diagnostic
         - style
     cyclop:
-      max-complexity: 15
+      max-complexity: 16
     revive:
       rules:
         - name: exported

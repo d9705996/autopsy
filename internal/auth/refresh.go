@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -44,7 +45,7 @@ func (s *RefreshStore) IssueRefreshToken(_ context.Context, userID string, ttl t
 
 // RotateRefreshToken validates the given token, revokes it, and issues a new one.
 // Returns the new refresh token and the user ID.
-func (s *RefreshStore) RotateRefreshToken(_ context.Context, rawToken string) (token string, userID string, err error) {
+func (s *RefreshStore) RotateRefreshToken(_ context.Context, rawToken string) (token, userID string, err error) {
 	h := hashToken(rawToken)
 
 	var rt model.RefreshToken
@@ -52,10 +53,10 @@ func (s *RefreshStore) RotateRefreshToken(_ context.Context, rawToken string) (t
 		return "", "", fmt.Errorf("refresh token not found: %w", err)
 	}
 	if rt.RevokedAt != nil {
-		return "", "", fmt.Errorf("refresh token has been revoked")
+		return "", "", errors.New("refresh token has been revoked")
 	}
 	if time.Now().After(rt.ExpiresAt) {
-		return "", "", fmt.Errorf("refresh token has expired")
+		return "", "", errors.New("refresh token has expired")
 	}
 
 	// Revoke the old token.

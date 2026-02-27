@@ -35,12 +35,12 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string, accessTTL, refreshTTL time.Du
 
 type loginRequest struct {
 	Email    string `json:"email"`
-	Password string `json:"password"`
+	Password string `json:"password"` //nolint:gosec // intentional: login request DTO carries the user-supplied password
 }
 
 type tokenAttrs struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken  string `json:"access_token"`  //nolint:gosec // intentional: auth response DTO carrying the issued access token
+	RefreshToken string `json:"refresh_token"` //nolint:gosec // intentional: auth response DTO carrying the issued refresh token
 	TokenType    string `json:"token_type"`
 }
 
@@ -100,7 +100,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 type refreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"refresh_token"` //nolint:gosec // intentional: token rotation/logout DTO
 }
 
 // Refresh handles POST /api/v1/auth/refresh.
@@ -149,7 +149,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 type logoutRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"refresh_token"` //nolint:gosec // intentional: token rotation/logout DTO
 }
 
 // Logout handles POST /api/v1/auth/logout.

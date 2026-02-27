@@ -16,6 +16,7 @@ import (
 // HealthCheckArgs is a trivial job used to validate queue wiring.
 type HealthCheckArgs struct{}
 
+// Kind returns the unique job type identifier for health check jobs.
 func (HealthCheckArgs) Kind() string { return "health_check" }
 
 type healthCheckWorker struct {
@@ -40,8 +41,11 @@ type Client struct {
 	log    *slog.Logger
 }
 
+// Start begins processing queued jobs.
 func (c *Client) Start(ctx context.Context) error { return c.client.Start(ctx) }
-func (c *Client) Stop(ctx context.Context) error  { return c.client.Stop(ctx) }
+
+// Stop gracefully shuts down the worker client.
+func (c *Client) Stop(ctx context.Context) error { return c.client.Stop(ctx) }
 
 // noopQueue is used when River is unavailable (e.g. DB_DRIVER=sqlite).
 type noopQueue struct{ log *slog.Logger }

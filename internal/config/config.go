@@ -22,10 +22,12 @@ type Config struct {
 	OTel   OTelConfig
 }
 
+// HTTPConfig holds HTTP server configuration.
 type HTTPConfig struct {
 	Port int
 }
 
+// DBConfig holds database connection configuration.
 type DBConfig struct {
 	Driver   string // "sqlite" (default) or "postgres"
 	DSN      string // required when Driver == "postgres"
@@ -33,33 +35,39 @@ type DBConfig struct {
 	MaxConns int    // Postgres only
 }
 
+// LogConfig controls structured logging output.
 type LogConfig struct {
 	Level  string
 	Format string
 }
 
+// JWTConfig holds JSON Web Token signing and expiry settings.
 type JWTConfig struct {
-	Secret     string
+	Secret     string //nolint:gosec // intentional: holds JWT signing secret loaded from env
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
 }
 
+// AIConfig holds AI provider connection settings.
 type AIConfig struct {
 	Provider string
-	APIKey   string
+	APIKey   string //nolint:gosec // intentional: holds AI provider API key loaded from env
 	APIBase  string
 	Model    string
 }
 
+// AppConfig holds application-level settings such as seed credentials.
 type AppConfig struct {
 	SeedAdminEmail    string
 	SeedAdminPassword string
 }
 
+// WorkerConfig holds background worker settings.
 type WorkerConfig struct {
 	Concurrency int
 }
 
+// OTelConfig holds OpenTelemetry exporter settings.
 type OTelConfig struct {
 	OTLPEndpoint string
 }
