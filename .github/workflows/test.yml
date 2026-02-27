@@ -62,4 +62,4 @@ jobs:
         run: npm ci --prefix web
 
       - name: Type-check
-        run: npx --prefix web tsc -b --noEmit
+        run: cd web && npx tsc -b --noEmit

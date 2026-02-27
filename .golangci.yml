@@ -30,18 +30,17 @@ linters:
     - unconvert
     - unparam
     - whitespace
-
-linters-settings:
-  gosec:
-    excludes:
-      - G404   # Use of weak random number generator — acceptable in non-security code
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  exhaustive:
-    default-signifies-exhaustive: true
+  settings:
+    gosec:
+      excludes:
+        - G404   # Use of weak random number generator — acceptable in non-security code
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    exhaustive:
+      default-signifies-exhaustive: true
 
 issues:
   max-same-issues: 0
